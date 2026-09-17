@@ -1,0 +1,115 @@
+{
+  "schemaVersion": "1.0.0",
+  "entities": {
+    "semanaS140T": {
+      "collectionName": "semanas_s140t",
+      "description": "Programação oficial S-140-T da Reunião Nossa Vida e Ministério Cristão da Congregação Vila Cisper",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador único da semana (ex: sem-2026-09-07)", "required": true },
+        "periodo": { "type": "string", "description": "Período da semana em texto (ex: 7-13 DE SETEMBRO)", "required": true },
+        "leituraBiblica": { "type": "string", "description": "Leitura bíblica da semana (ex: JEREMIAS 32-33)", "required": true },
+        "dataReferencia": { "type": "string", "description": "Data ISO YYYY-MM-DD para ordenação cronológica", "required": true },
+        "ehVisita": { "type": "boolean", "description": "Indica se é semana de visita do superintendente", "required": false },
+        "presidente": { "type": "string", "description": "Nome do presidente da reunião", "required": true },
+        "canticoInicial": { "type": "string", "description": "Número do cântico inicial", "required": true },
+        "oracaoInicial": { "type": "string", "description": "Nome do irmão da oração inicial", "required": true },
+        "comentariosIniciaisMin": { "type": "number", "description": "Minutos dos comentários iniciais", "required": false },
+        "discursoTesourosTitulo": { "type": "string", "description": "Título do discurso de Tesouros", "required": true },
+        "discursoTesourosIrmao": { "type": "string", "description": "Orador do discurso de Tesouros", "required": true },
+        "discursoTesourosTempoMin": { "type": "number", "description": "Duração em minutos do discurso de Tesouros", "required": false },
+        "joiasEspirituaisIrmao": { "type": "string", "description": "Irmão responsável pelas Joias Espirituais", "required": true },
+        "joiasEspirituaisTempoMin": { "type": "number", "description": "Duração em minutos de Joias Espirituais", "required": false },
+        "leituraBibliaIrmao": { "type": "string", "description": "Irmão da leitura da Bíblia", "required": true },
+        "leituraBibliaTempoMin": { "type": "number", "description": "Duração em minutos da leitura da Bíblia", "required": false },
+        "partesMinisterio": { "type": "array", "description": "Lista de partes do Faça Seu Melhor no Ministério", "required": true },
+        "canticoMeio": { "type": "string", "description": "Número do cântico do meio", "required": true },
+        "partesVidaCrista": { "type": "array", "description": "Lista de partes de Nossa Vida Cristã", "required": true },
+        "estudoBiblicoDirigente": { "type": "string", "description": "Dirigente do estudo bíblico de congregação", "required": false },
+        "estudoBiblicoLeitor": { "type": "string", "description": "Leitor do estudo bíblico de congregação", "required": false },
+        "estudoBiblicoTempoMin": { "type": "number", "description": "Duração em minutos do estudo bíblico", "required": false },
+        "canticoFinal": { "type": "string", "description": "Número do cântico final", "required": true },
+        "oracaoFinal": { "type": "string", "description": "Nome do irmão da oração final", "required": true },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da última atualização", "required": false }
+      }
+    },
+    "designacaoReuniao": {
+      "collectionName": "designacoes_reuniao",
+      "description": "Designações de áudio, vídeo, microfones, indicadores e leituras",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador da semana ou data", "required": true },
+        "semana": { "type": "string", "description": "Identificador textual da semana", "required": true },
+        "dataReferencia": { "type": "string", "description": "Data ISO YYYY-MM-DD", "required": true },
+        "meioSemana": { "type": "object", "description": "Designações da reunião de meio de semana", "required": true },
+        "fimSemana": { "type": "object", "description": "Designações da reunião de fim de semana", "required": true },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    },
+    "territorio": {
+      "collectionName": "territorios",
+      "description": "Territórios e mapas da Congregação Vila Cisper",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador único do território", "required": true },
+        "numero": { "type": "string", "description": "Número de identificação do mapa", "required": true },
+        "nome": { "type": "string", "description": "Nome ou descrição da área", "required": true },
+        "status": { "type": "string", "description": "Status atual (disponivel, trabalhado, em_andamento)", "required": true },
+        "responsavel": { "type": "string", "description": "Nome do publicador ou dirigente atualmente responsável", "required": false },
+        "dataSaida": { "type": "string", "description": "Data em que foi retirado", "required": false },
+        "dataDevolucao": { "type": "string", "description": "Data em que foi devolvido ou concluído", "required": false },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    },
+    "discursoPublico": {
+      "collectionName": "discursos_publicos",
+      "description": "Programação dos discursos públicos bíblicos de fim de semana",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador do discurso", "required": true },
+        "data": { "type": "string", "description": "Data da reunião YYYY-MM-DD", "required": true },
+        "numeroTema": { "type": "string", "description": "Número oficial do esboço do discurso", "required": false },
+        "tema": { "type": "string", "description": "Tema bíblico do discurso", "required": true },
+        "orador": { "type": "string", "description": "Nome do orador", "required": true },
+        "congregacaoOrigem": { "type": "string", "description": "Congregação de origem do orador", "required": false },
+        "presidente": { "type": "string", "description": "Nome do presidente da reunião", "required": false },
+        "leitor": { "type": "string", "description": "Leitor da revista A Sentinela", "required": false },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    },
+    "servicoCampo": {
+      "collectionName": "servico_campo",
+      "description": "Escalas e arranjos das saídas para o serviço de pregação de campo",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador do arranjo de campo", "required": true },
+        "diaSemana": { "type": "string", "description": "Dia da semana (ex: Quarta-feira, Sábado, Domingo)", "required": true },
+        "horario": { "type": "string", "description": "Horário de saída", "required": true },
+        "pontoEncontro": { "type": "string", "description": "Local ou Salão do Reino", "required": true },
+        "dirigente": { "type": "string", "description": "Dirigente designado", "required": false },
+        "grupo": { "type": "string", "description": "Grupo responsável", "required": false },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    },
+    "escalaLimpeza": {
+      "collectionName": "escalas_limpeza",
+      "description": "Programação semanal da limpeza e manutenção do Salão do Reino",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador da semana de limpeza", "required": true },
+        "semana": { "type": "string", "description": "Semana correspondente", "required": true },
+        "grupo": { "type": "string", "description": "Grupo de serviço encarregado da limpeza", "required": true },
+        "dirigente": { "type": "string", "description": "Irmão coordenador da limpeza", "required": false },
+        "concluida": { "type": "boolean", "description": "Status de execução da limpeza", "required": false },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    },
+    "registroAssistencia": {
+      "collectionName": "registros_assistencia",
+      "description": "Contagem e registro de assistência das reuniões congregacionais",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador do registro", "required": true },
+        "data": { "type": "string", "description": "Data da reunião YYYY-MM-DD", "required": true },
+        "tipo": { "type": "string", "description": "meio_semana ou fim_semana", "required": true },
+        "totalPresentes": { "type": "number", "description": "Total de pessoas presentes", "required": true },
+        "presencial": { "type": "number", "description": "Presentes presenciais no Salão", "required": false },
+        "zoom": { "type": "number", "description": "Conexões via videoconferência", "required": false },
+        "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
+      }
+    }
+  }
+}

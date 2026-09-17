@@ -1,0 +1,6 @@
+{
+  "name": "CONGREGAÇÃO VILA CISPER",
+  "description": "Sistema interno para organização das atividades da congregação.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
