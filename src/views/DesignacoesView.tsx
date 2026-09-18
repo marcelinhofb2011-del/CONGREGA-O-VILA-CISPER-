@@ -16,7 +16,6 @@ import {
   Lock,
   Unlock,
   Plus,
-  Printer,
   Calendar,
   RotateCcw,
   ShieldCheck,
@@ -321,10 +320,6 @@ export const DesignacoesView: React.FC = () => {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const handleBulkSuccess = (qtd: number, modo: string) => {
     setEscalas(getStoredEscalaDesignacoes());
     const modoTexto =
@@ -362,7 +357,7 @@ export const DesignacoesView: React.FC = () => {
           </p>
         </div>
 
-        {/* Controles de Acesso e Impressão */}
+        {/* Controles de Acesso */}
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <button
@@ -374,15 +369,6 @@ export const DesignacoesView: React.FC = () => {
               <span>Planilhas / Lote</span>
             </button>
           )}
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            title="Imprimir quadro ou exportar em PDF"
-          >
-            <Printer className="h-4 w-4" />
-            <span>Imprimir / PDF</span>
-          </button>
 
           {isAdmin ? (
             <div className="flex items-center gap-2">

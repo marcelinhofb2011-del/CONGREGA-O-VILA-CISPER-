@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Bell,
@@ -18,6 +18,7 @@ import { getStoredEscalaDesignacoes, EscalaDesignacaoItem } from '../data/design
 import { getStoredDiscursosBiblicos, DiscursoBiblicoItem } from '../data/discursoStorage';
 import { getStoredLimpezaEscala, LimpezaEscalaItem } from '../data/limpezaStorage';
 import { getStoredCampoFds, CampoFimDeSemanaItem } from '../data/campoStorage';
+import { parseItemDate } from '../utils/dateUtils';
 
 interface InicioViewProps {
   onNavigate: (screen: ScreenId) => void;
@@ -30,27 +31,49 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
   const todasLimpezas = useMemo(() => getStoredLimpezaEscala(), []);
   const todosCamposFds = useMemo(() => getStoredCampoFds(), []);
 
-  // Encontra reuniões atuais de Setembro/Outubro 2026
-  const reunioesSetembro = useMemo(() => {
-    return todasDesignacoes.filter((d) => d.mesChave === 'setembro' || d.mes.toLowerCase().includes('setembro'));
+  // Encontra reuniões mais próximas baseadas na data atual real
+  const proximasReunioes = useMemo(() => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const comData = todasDesignacoes
+      .map((item) => ({
+        item,
+        date: parseItemDate(item.dia, item.mes),
+      }))
+      .filter((d): d is { item: EscalaDesignacaoItem; date: Date } => d.date !== null);
+
+    // Filtra reuniões a partir de hoje em ordem cronológica
+    const futuras = comData
+      .filter((r) => r.date.getTime() >= hoje.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map((r) => r.item);
+
+    if (futuras.length > 0) {
+      return futuras.slice(0, 8);
+    }
+
+    // Fallback: se todas já passaram ou nenhuma futura encontrada, exibe as mais recentes
+    return todasDesignacoes.slice(-8);
   }, [todasDesignacoes]);
 
   // Reuniões para seleção rápida na tela inicial
-  const reunioesExibicao = useMemo(() => {
-    if (reunioesSetembro.length > 0) {
-      return reunioesSetembro;
-    }
-    return todasDesignacoes.slice(0, 5);
-  }, [reunioesSetembro, todasDesignacoes]);
+  const reunioesExibicao = proximasReunioes;
 
-  // Reunião selecionada no quadro de próximas designações (padrão: primeira relevante de setembro)
+  // Reunião selecionada no quadro de próximas designações (inicia na primeira reunião válida mais próxima)
   const [reuniaoSelecionadaId, setReuniaoSelecionadaId] = useState<string>(() => {
-    // Procura reunião mais próxima da data atual (15 a 20 de setembro)
-    const proxima = reunioesSetembro.find(
-      (r) => r.dia.includes('20/09') || r.dia.includes('24/09') || r.dia.includes('15/09')
-    );
-    return proxima ? proxima.id : reunioesSetembro[0]?.id || todasDesignacoes[0]?.id || '';
+    return proximasReunioes[0]?.id || todasDesignacoes[0]?.id || '';
   });
+
+  // Atualiza a reunião ativa caso a lista mude
+  useEffect(() => {
+    if (proximasReunioes.length > 0) {
+      setReuniaoSelecionadaId((atual) => {
+        const existe = proximasReunioes.some((r) => r.id === atual);
+        return existe && atual ? atual : proximasReunioes[0].id;
+      });
+    }
+  }, [proximasReunioes]);
 
   const reuniaoAtiva: EscalaDesignacaoItem | undefined = useMemo(() => {
     return (
@@ -60,28 +83,73 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
     );
   }, [reunioesExibicao, reuniaoSelecionadaId, todasDesignacoes]);
 
-  // Próximo discurso bíblico
+  // Próximo discurso bíblico a partir da data atual
   const proximoDiscurso: DiscursoBiblicoItem | undefined = useMemo(() => {
-    const discursoSetembro = todosDiscursos.find(
-      (d) => d.data.includes('20/09') || d.data.includes('27/09')
-    );
-    return discursoSetembro || todosDiscursos[0];
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const comData = todosDiscursos
+      .map((d) => ({
+        item: d,
+        date: parseItemDate(d.data, d.mes),
+      }))
+      .filter((d): d is { item: DiscursoBiblicoItem; date: Date } => d.date !== null);
+
+    const futuros = comData
+      .filter((d) => d.date.getTime() >= hoje.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (futuros.length > 0) {
+      return futuros[0].item;
+    }
+
+    return comData.length > 0 ? comData[comData.length - 1].item : todosDiscursos[0];
   }, [todosDiscursos]);
 
-  // Próxima limpeza da congregação
+  // Próxima limpeza da congregação a partir da data atual
   const proximaLimpeza: LimpezaEscalaItem | undefined = useMemo(() => {
-    const limpSetembro = todasLimpezas.find(
-      (l) => l.mesChave === 'setembro' && (l.dias.includes('15/20') || l.dias.includes('24/27'))
-    );
-    return limpSetembro || todasLimpezas.find((l) => l.mesChave === 'setembro') || todasLimpezas[0];
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const comData = todasLimpezas
+      .map((l) => ({
+        item: l,
+        date: parseItemDate(l.dias, l.mes || l.mesChave),
+      }))
+      .filter((l): l is { item: LimpezaEscalaItem; date: Date } => l.date !== null);
+
+    const futuras = comData
+      .filter((l) => l.date.getTime() >= hoje.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (futuras.length > 0) {
+      return futuras[0].item;
+    }
+
+    return comData.length > 0 ? comData[comData.length - 1].item : todasLimpezas[0];
   }, [todasLimpezas]);
 
-  // Próximas saídas de campo no fim de semana
+  // Próximas saídas de campo no fim de semana a partir da data atual
   const proximoCampo: CampoFimDeSemanaItem | undefined = useMemo(() => {
-    const campoSetembro = todosCamposFds.find(
-      (c) => c.mesChave === 'setembro' || c.mes.toLowerCase().includes('setembro')
-    );
-    return campoSetembro || todosCamposFds[0];
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const comData = todosCamposFds
+      .map((c) => ({
+        item: c,
+        date: parseItemDate(c.data, c.mes || c.mesChave),
+      }))
+      .filter((c): c is { item: CampoFimDeSemanaItem; date: Date } => c.date !== null);
+
+    const futuros = comData
+      .filter((c) => c.date.getTime() >= hoje.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (futuros.length > 0) {
+      return futuros[0].item;
+    }
+
+    return comData.length > 0 ? comData[comData.length - 1].item : todosCamposFds[0];
   }, [todosCamposFds]);
 
   return (
@@ -426,7 +494,9 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
                 Discurso Público do próximo fim de semana
               </span>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {proximoDiscurso ? `Data: ${proximoDiscurso.data}/2026` : 'Reunião de Fim de Semana'}
+                {proximoDiscurso
+                  ? `Data: ${proximoDiscurso.data.includes('/20') ? proximoDiscurso.data : `${proximoDiscurso.data}/2026`}`
+                  : 'Reunião de Fim de Semana'}
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 sm:text-sm leading-relaxed">

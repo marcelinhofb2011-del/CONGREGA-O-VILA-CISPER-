@@ -79,3 +79,68 @@ export function brToInputDate(brVal: string): string {
   const [day, month, year] = brVal.split('/');
   return `${year}-${month}-${day}`;
 }
+
+const MESES_MAP: Record<string, number> = {
+  janeiro: 0,
+  fevereiro: 1,
+  marco: 2,
+  'março': 2,
+  abril: 3,
+  maio: 4,
+  junho: 5,
+  julho: 6,
+  agosto: 7,
+  setembro: 8,
+  outubro: 9,
+  novembro: 10,
+  dezembro: 11,
+};
+
+export function parseMesAno(mesStr?: string): { month: number; year: number } {
+  const currentYear = new Date().getFullYear();
+  if (!mesStr) return { month: 0, year: currentYear };
+
+  const clean = mesStr.toLowerCase();
+  let month = 0;
+  for (const [key, val] of Object.entries(MESES_MAP)) {
+    if (clean.includes(key)) {
+      month = val;
+      break;
+    }
+  }
+
+  const yearMatch = mesStr.match(/\d{4}/);
+  const year = yearMatch ? parseInt(yearMatch[0], 10) : currentYear;
+
+  return { month, year };
+}
+
+// Analisa strings de datas como "Domingo 04/01", "20/09", "15/20" e retorna Date com hora 23:59:59
+export function parseItemDate(diaOrDataStr: string, mesStr?: string): Date | null {
+  if (!diaOrDataStr) return null;
+  const currentYear = new Date().getFullYear();
+
+  // Caso 1: Formato com barra contendo dia e mês (ex: "Domingo 20/09" ou "20/09/2026")
+  const ddmmyyyyMatch = diaOrDataStr.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+  if (ddmmyyyyMatch) {
+    const day = parseInt(ddmmyyyyMatch[1], 10);
+    const month = parseInt(ddmmyyyyMatch[2], 10) - 1;
+    let year = ddmmyyyyMatch[3] ? parseInt(ddmmyyyyMatch[3], 10) : undefined;
+    if (!year && mesStr) {
+      const ym = mesStr.match(/\d{4}/);
+      if (ym) year = parseInt(ym[0], 10);
+    }
+    return new Date(year || currentYear, month, day, 23, 59, 59);
+  }
+
+  // Caso 2: Contém apenas dias numéricos (ex: "15/20" ou "4" em escalas de limpeza)
+  const nums = diaOrDataStr.match(/\d+/g);
+  if (nums && nums.length > 0 && mesStr) {
+    // Pega o último dia do período para saber até quando a atividade é válida
+    const day = parseInt(nums[nums.length - 1], 10);
+    const { month, year } = parseMesAno(mesStr);
+    return new Date(year, month, day, 23, 59, 59);
+  }
+
+  return null;
+}
