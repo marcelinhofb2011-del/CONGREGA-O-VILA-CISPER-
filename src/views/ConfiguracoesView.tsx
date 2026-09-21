@@ -3,20 +3,18 @@ import {
   Type,
   Sun,
   Moon,
-  Download,
   Smartphone,
   Check,
   Laptop,
   FileSpreadsheet,
   Upload,
-  Database,
-  ArrowDownToLine,
   CheckCircle2,
   Lock,
   Unlock,
   Eye,
   EyeOff,
   X,
+  Download,
 } from 'lucide-react';
 import { TextSize, ThemeMode } from '../types';
 import { usePWA } from '../hooks/usePWA';
@@ -30,11 +28,6 @@ import {
   setAdminAuthenticated,
   verifyAdminPassword,
 } from '../data/territoriosStorage';
-import {
-  gerarModeloCsvExemplo,
-  generateCsv,
-  downloadBrowserFile,
-} from '../utils/csvSpreadsheetUtils';
 
 interface ConfiguracoesViewProps {
   textSize: TextSize;
@@ -78,7 +71,7 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
       setIsAdmin(true);
       setShowAuthModal(false);
       setPasswordInput('');
-      setFeedbackMsg('Acesso do responsável ativado. Central de planilhas liberada.');
+      setFeedbackMsg('Acesso do responsável ativado. Central de importação liberada.');
       setTimeout(() => setFeedbackMsg(null), 3500);
     } else {
       setAuthError('Senha incorreta.');
@@ -92,46 +85,14 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
     setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
-  const handleDownloadFullBackupJson = () => {
-    const backup = {
-      versao: '2026.1',
-      congregacao: 'Vila Cisper (67744)',
-      data_exportacao: new Date().toISOString(),
-      designacoes: getStoredEscalaDesignacoes(),
-      campo: getStoredCampoFds(),
-      discursos: getStoredDiscursosBiblicos(),
-      limpeza: getStoredLimpezaEscala(),
-    };
-    downloadBrowserFile(
-      JSON.stringify(backup, null, 2),
-      `Backup_Geral_Vila_Cisper_${new Date().toISOString().slice(0, 10)}.json`,
-      'application/json;charset=utf-8;'
-    );
-    setFeedbackMsg('Backup geral completo (JSON) baixado com sucesso!');
-    setTimeout(() => setFeedbackMsg(null), 3500);
-  };
-
-  const handleDownloadModeloCsv = (modulo: 'designacoes' | 'campo' | 'discurso' | 'limpeza') => {
-    const csv = gerarModeloCsvExemplo(modulo);
-    const nomes = {
-      designacoes: 'Modelo_Planilha_Designacoes_Som_Video_Indicadores',
-      campo: 'Modelo_Planilha_Servico_Campo',
-      discurso: 'Modelo_Planilha_Discursos_Publicos',
-      limpeza: 'Modelo_Planilha_Limpeza_Salao',
-    };
-    downloadBrowserFile(csv, `${nomes[modulo]}.csv`, 'text/csv;charset=utf-8;');
-    setFeedbackMsg(`Modelo de planilha (${modulo}) baixado para Excel / Google Sheets!`);
-    setTimeout(() => setFeedbackMsg(null), 3500);
-  };
-
   return (
     <div className="space-y-6 pb-12">
       <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
         <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-          Configurações e Gestão de Planilhas
+          Configurações e Importação de Planilhas
         </h2>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Ajustes de interface, instalação do aplicativo e central de importação/exportação em lote.
+          Ajustes de interface, instalação do aplicativo e importação de programações a partir de planilhas.
         </p>
       </div>
 
@@ -142,7 +103,7 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
         </div>
       )}
 
-      {/* Central de Importação / Exportação e Backup (Exclusivo para Responsável Autenticado) */}
+      {/* Central de Importação de Planilhas (Exclusivo para Responsável Autenticado) */}
       {isAdmin ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-5 dark:border-emerald-900/60 dark:bg-emerald-950/20">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -153,7 +114,7 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
-                    Central de Importação & Exportação em Lote (Excel / Sheets)
+                    Central de Importação de Planilhas (Excel / CSV)
                   </h3>
                   <span className="inline-flex items-center gap-1 rounded bg-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:bg-emerald-900/80 dark:text-emerald-200">
                     <Unlock className="h-3 w-3" />
@@ -161,19 +122,11 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Lance meses ou anos inteiros de uma só vez colando do Excel ou importando arquivos CSV.
+                  Selecione a planilha para o aplicativo ler os dados e carregar as programações automaticamente.
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 self-start sm:self-auto">
-              <button
-                onClick={handleDownloadFullBackupJson}
-                className="inline-flex items-center gap-1.5 self-start rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-800 dark:text-emerald-300 sm:self-auto"
-                title="Exportar todos os 4 módulos em um único arquivo de backup JSON"
-              >
-                <Database className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Backup Geral (JSON)</span>
-              </button>
               <button
                 onClick={handleLogout}
                 className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -196,20 +149,13 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
                 Meio de semana e fim de semana.
               </p>
             </div>
-            <div className="mt-3 flex flex-col gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setModalAberto('designacoes')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-blue-700"
               >
                 <Upload className="h-3.5 w-3.5" />
-                <span>Importar / Gerenciar</span>
-              </button>
-              <button
-                onClick={() => handleDownloadModeloCsv('designacoes')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <ArrowDownToLine className="h-3 w-3" />
-                <span>Baixar Modelo CSV</span>
+                <span>Importar Planilha</span>
               </button>
             </div>
           </div>
@@ -224,20 +170,13 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
                 Dirigentes de sábado e domingo.
               </p>
             </div>
-            <div className="mt-3 flex flex-col gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setModalAberto('campo')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-sky-700"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-sky-700"
               >
                 <Upload className="h-3.5 w-3.5" />
-                <span>Importar / Gerenciar</span>
-              </button>
-              <button
-                onClick={() => handleDownloadModeloCsv('campo')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <ArrowDownToLine className="h-3 w-3" />
-                <span>Baixar Modelo CSV</span>
+                <span>Importar Planilha</span>
               </button>
             </div>
           </div>
@@ -252,20 +191,13 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
                 Temas, oradores, presidentes e leitores.
               </p>
             </div>
-            <div className="mt-3 flex flex-col gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setModalAberto('discurso')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-amber-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-amber-700"
               >
                 <Upload className="h-3.5 w-3.5" />
-                <span>Importar / Gerenciar</span>
-              </button>
-              <button
-                onClick={() => handleDownloadModeloCsv('discurso')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <ArrowDownToLine className="h-3 w-3" />
-                <span>Baixar Modelo CSV</span>
+                <span>Importar Planilha</span>
               </button>
             </div>
           </div>
@@ -280,20 +212,13 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
                 Grupos, datas e dirigentes semanais.
               </p>
             </div>
-            <div className="mt-3 flex flex-col gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setModalAberto('limpeza')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-emerald-700"
               >
                 <Upload className="h-3.5 w-3.5" />
-                <span>Importar / Gerenciar</span>
-              </button>
-              <button
-                onClick={() => handleDownloadModeloCsv('limpeza')}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <ArrowDownToLine className="h-3 w-3" />
-                <span>Baixar Modelo CSV</span>
+                <span>Importar Planilha</span>
               </button>
             </div>
           </div>
@@ -307,10 +232,10 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                Gestão e Backup de Planilhas em Lote
+                Importação de Planilhas
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Acesso restrito ao irmão responsável para importar escalas ou gerar backups da congregação.
+                Acesso restrito ao irmão responsável para importar escalas de reuniões e atividades.
               </p>
             </div>
           </div>

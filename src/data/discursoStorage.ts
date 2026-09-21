@@ -1,13 +1,15 @@
+import { firebaseSync } from './firebaseSyncService';
+
 export interface DiscursoBiblicoItem {
   id: string;
-  mes: string; // Ex: 'Setembro'
+  mes?: string; // Ex: 'Setembro'
   data: string; // Ex: '06/09' ou '06/09/2026'
   tema: string; // Ex: 'Mostre que vc apoia o direito de Jeová governar'
   numeroTema?: string; // Número do cântico ou esboço se houver
   orador?: string; // Nome do orador
   congregacaoOrador?: string; // Ex: 'Vila Cisper', 'Convidado'
-  presidente: string; // Ex: 'Marcelo Ferreira'
-  leitor: string; // Ex: 'Danilo Cardoso'
+  presidente?: string; // Ex: 'Marcelo Ferreira'
+  leitor?: string; // Ex: 'Danilo Cardoso'
   observacao?: string;
 }
 
@@ -24,7 +26,7 @@ export interface DiscursoPublicoItem {
   dataAtualizacao?: string;
 }
 
-const STORAGE_KEY_DISCURSOS = 'vila_cisper_discurso_biblico_2026';
+export const STORAGE_KEY_DISCURSOS = 'vila_cisper_discurso_biblico_2026';
 
 export const DISCURSOS_CANONICOS: DiscursoBiblicoItem[] = [
   {
@@ -142,6 +144,7 @@ export function saveStoredDiscursoBiblico(item: DiscursoBiblicoItem): { success:
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
+    firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -153,6 +156,7 @@ export function deleteStoredDiscursoBiblico(id: string): { success: boolean; dat
     const current = getStoredDiscursosBiblicos();
     const updated = current.filter((d) => d.id !== id);
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
+    firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -162,7 +166,7 @@ export function deleteStoredDiscursoBiblico(id: string): { success: boolean; dat
 export function saveBulkDiscursosBiblicos(
   newItems: DiscursoBiblicoItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
-  targetMonth?: string
+  targetMonth?: string | string[]
 ): { success: boolean; data?: DiscursoBiblicoItem[]; error?: string; count?: number } {
   try {
     const current = getStoredDiscursosBiblicos();
@@ -171,7 +175,8 @@ export function saveBulkDiscursosBiblicos(
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonth) {
-      const filtered = current.filter((item) => item.mes.toLowerCase() !== targetMonth.toLowerCase());
+      const monthList = Array.isArray(targetMonth) ? targetMonth.map((m) => m.toLowerCase()) : [targetMonth.toLowerCase()];
+      const filtered = current.filter((item) => !monthList.includes(item.mes.toLowerCase()));
       updated = [...filtered, ...newItems];
     } else {
       const existingIds = new Set(current.map((i) => i.id));
@@ -185,6 +190,7 @@ export function saveBulkDiscursosBiblicos(
     }
 
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
+    firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -193,6 +199,7 @@ export function saveBulkDiscursosBiblicos(
 
 export function resetDiscursosBiblicosToSample(): DiscursoBiblicoItem[] {
   localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(DISCURSOS_CANONICOS));
+  firebaseSync.saveAllDiscursos(DISCURSOS_CANONICOS);
   return DISCURSOS_CANONICOS;
 }
 

@@ -1,3 +1,5 @@
+import { firebaseSync } from './firebaseSyncService';
+
 export interface EscalaDesignacaoItem {
   id: string;
   mes: string; // Ex: 'Janeiro 2026', 'Fevereiro 2026', etc.
@@ -23,7 +25,7 @@ export interface VoluntarioTotais {
   total: number;
 }
 
-const STORAGE_KEY_DESIGNACOES = 'vila_cisper_designacoes_reunioes_2026';
+export const STORAGE_KEY_DESIGNACOES = 'vila_cisper_designacoes_reunioes_2026';
 
 export const ESCALA_DESIGNACOES_CANONICA: EscalaDesignacaoItem[] = [
   // JANEIRO 2026
@@ -159,6 +161,8 @@ export function saveStoredEscalaItem(item: EscalaDesignacaoItem): { success: boo
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    // Sincroniza em tempo real com o banco de dados Firestore na nuvem
+    firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -170,6 +174,8 @@ export function deleteStoredEscalaItem(id: string): { success: boolean; data?: E
     const current = getStoredEscalaDesignacoes();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    // Sincroniza remoção em tempo real com o Firestore
+    firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -179,7 +185,7 @@ export function deleteStoredEscalaItem(id: string): { success: boolean; data?: E
 export function saveBulkEscalaDesignacoes(
   newItems: EscalaDesignacaoItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
-  targetMonthKey?: string
+  targetMonthKey?: string | string[]
 ): { success: boolean; data?: EscalaDesignacaoItem[]; error?: string; count?: number } {
   try {
     const current = getStoredEscalaDesignacoes();
@@ -188,7 +194,8 @@ export function saveBulkEscalaDesignacoes(
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
-      const filtered = current.filter((item) => item.mesChave !== targetMonthKey);
+      const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
+      const filtered = current.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
       // Append / Mesclar: evitar duplicados pelo ID se já existirem
@@ -203,6 +210,8 @@ export function saveBulkEscalaDesignacoes(
     }
 
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    // Sincroniza em lote diretamente com o Firestore na nuvem
+    firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -211,6 +220,7 @@ export function saveBulkEscalaDesignacoes(
 
 export function resetEscalaDesignacoesToSample(): EscalaDesignacaoItem[] {
   localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(ESCALA_DESIGNACOES_CANONICA));
+  firebaseSync.saveAllDesignacoes(ESCALA_DESIGNACOES_CANONICA);
   return ESCALA_DESIGNACOES_CANONICA;
 }
 

@@ -18,6 +18,10 @@ import {
   STORAGE_KEY_TERRITORIOS,
   getStoredTerritorios,
 } from './territoriosStorage';
+import { STORAGE_KEY_DESIGNACOES } from './designacoesStorage';
+import { STORAGE_KEY_CAMPO_FDS, STORAGE_KEY_CAMPO_PROGRAMACAO } from './campoStorage';
+import { STORAGE_KEY_DISCURSOS } from './discursoStorage';
+import { STORAGE_KEY_LIMPEZA_ESCALAS } from './limpezaStorage';
 
 // Coleções do Firestore
 export const COLLECTIONS = {
@@ -26,6 +30,7 @@ export const COLLECTIONS = {
   DESIGNACOES: 'designacoes_reuniao',
   DISCURSOS: 'discursos_publicos',
   CAMPO: 'servico_campo',
+  CAMPO_PROGRAMACAO: 'servico_campo_programacao',
   LIMPEZA: 'escalas_limpeza',
   ASSISTENCIA: 'registros_assistencia',
 } as const;
@@ -66,11 +71,12 @@ class FirebaseSyncManager {
     try {
       this.syncS140T();
       this.syncTerritorios();
-      this.syncGenericCollection(COLLECTIONS.DESIGNACOES, 'designacoes_vilacisper_data');
-      this.syncGenericCollection(COLLECTIONS.DISCURSOS, 'discurso_vilacisper_data');
-      this.syncGenericCollection(COLLECTIONS.CAMPO, 'campo_vilacisper_data');
-      this.syncGenericCollection(COLLECTIONS.LIMPEZA, 'limpeza_vilacisper_data');
-      this.syncGenericCollection(COLLECTIONS.ASSISTENCIA, 'assistencia_vilacisper_data');
+      this.syncGenericCollection(COLLECTIONS.DESIGNACOES, STORAGE_KEY_DESIGNACOES, 'designacoes-firebase-updated');
+      this.syncGenericCollection(COLLECTIONS.DISCURSOS, STORAGE_KEY_DISCURSOS, 'discursos-firebase-updated');
+      this.syncGenericCollection(COLLECTIONS.CAMPO, STORAGE_KEY_CAMPO_FDS, 'campo-firebase-updated');
+      this.syncGenericCollection(COLLECTIONS.CAMPO_PROGRAMACAO, STORAGE_KEY_CAMPO_PROGRAMACAO, 'campo-programacao-firebase-updated');
+      this.syncGenericCollection(COLLECTIONS.LIMPEZA, STORAGE_KEY_LIMPEZA_ESCALAS, 'limpeza-firebase-updated');
+      this.syncGenericCollection(COLLECTIONS.ASSISTENCIA, 'assistencia_vilacisper_data', 'assistencia-firebase-updated');
     } catch (err) {
       console.warn('Erro ao inicializar listeners do Firebase:', err);
       this.setStatus('offline');
@@ -253,8 +259,9 @@ class FirebaseSyncManager {
   // ==========================================
   // Sincronização de Coleção Genérica
   // ==========================================
-  private syncGenericCollection(collectionName: string, localStorageKey: string) {
+  private syncGenericCollection(collectionName: string, localStorageKey: string, customEventName?: string) {
     const colRef = collection(db, collectionName);
+    const eventName = customEventName || `${collectionName}-firebase-updated`;
 
     const unsub = onSnapshot(
       colRef,
@@ -289,9 +296,7 @@ class FirebaseSyncManager {
         });
 
         localStorage.setItem(localStorageKey, JSON.stringify(items));
-        window.dispatchEvent(
-          new CustomEvent(`${collectionName}-firebase-updated`, { detail: items })
-        );
+        window.dispatchEvent(new CustomEvent(eventName, { detail: items }));
       },
       (error) => {
         console.warn(`Falha no listener de ${collectionName}:`, error);
@@ -299,6 +304,111 @@ class FirebaseSyncManager {
     );
 
     this.unsubscribers.push(unsub);
+  }
+
+  /**
+   * Salva um lote inteiro de itens em uma coleção do Firestore,
+   * removendo documentos órfãos e atualizando localStorage e UI simultaneamente.
+   */
+  public async saveBatchCollection(
+    collectionName: string,
+    items: any[],
+    localStorageKey: string,
+    customEventName: string
+  ): Promise<void> {
+    try {
+      // 1. Atualiza imediatamente o cache local e despacha evento para a UI
+      localStorage.setItem(localStorageKey, JSON.stringify(items));
+      window.dispatchEvent(new CustomEvent(customEventName, { detail: items }));
+
+      // 2. Sincroniza com o Firestore
+      const colRef = collection(db, collectionName);
+      const snapshot = await getDocs(colRef);
+      const currentIds = new Set(items.map((it) => String(it.id)));
+
+      // Firestore suporta até 500 operações por batch
+      const batch = writeBatch(db);
+      let opCount = 0;
+
+      // Deleta documentos antigos que não estão mais no novo conjunto
+      snapshot.forEach((docSnap) => {
+        if (!currentIds.has(docSnap.id)) {
+          batch.delete(docSnap.ref);
+          opCount++;
+        }
+      });
+
+      // Grava / atualiza todos os itens atuais
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const id = String(item.id || `item-${Date.now()}-${i}`);
+        const docRef = doc(db, collectionName, id);
+        batch.set(docRef, { ...item, atualizadoEm: new Date().toISOString() });
+        opCount++;
+      }
+
+      if (opCount > 0) {
+        await batch.commit();
+      }
+
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn(`Erro ao sincronizar lote de ${collectionName} no Firebase:`, err);
+    }
+  }
+
+  public async saveAllDesignacoes(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.DESIGNACOES,
+      items,
+      STORAGE_KEY_DESIGNACOES,
+      'designacoes-firebase-updated'
+    );
+  }
+
+  public async saveAllCampo(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.CAMPO,
+      items,
+      STORAGE_KEY_CAMPO_FDS,
+      'campo-firebase-updated'
+    );
+  }
+
+  public async saveAllCampoProgramacao(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.CAMPO_PROGRAMACAO,
+      items,
+      STORAGE_KEY_CAMPO_PROGRAMACAO,
+      'campo-programacao-firebase-updated'
+    );
+  }
+
+  public async saveAllDiscursos(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.DISCURSOS,
+      items,
+      STORAGE_KEY_DISCURSOS,
+      'discursos-firebase-updated'
+    );
+  }
+
+  public async saveAllLimpeza(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.LIMPEZA,
+      items,
+      STORAGE_KEY_LIMPEZA_ESCALAS,
+      'limpeza-firebase-updated'
+    );
+  }
+
+  public async saveAllAssistencia(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.ASSISTENCIA,
+      items,
+      'assistencia_vilacisper_data',
+      'assistencia-firebase-updated'
+    );
   }
 
   public async saveGenericItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {

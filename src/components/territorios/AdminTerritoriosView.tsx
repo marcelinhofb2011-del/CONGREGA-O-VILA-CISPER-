@@ -534,7 +534,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                   {solicitacoes.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
-                        Nenhuma solicitação registrada até o momento.
+                        Nenhuma solicitação pendente.
                       </td>
                     </tr>
                   ) : (

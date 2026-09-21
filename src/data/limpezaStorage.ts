@@ -1,3 +1,5 @@
+import { firebaseSync } from './firebaseSyncService';
+
 export interface LimpezaEscalaItem {
   id: string;
   mes: string; // Ex: 'Janeiro', 'Fevereiro', etc.
@@ -28,7 +30,7 @@ export interface LimpezaDesignacao {
   dataAtualizacao?: string;
 }
 
-const STORAGE_KEY_LIMPEZA_ESCALAS = 'vila_cisper_limpeza_escalas_2026';
+export const STORAGE_KEY_LIMPEZA_ESCALAS = 'vila_cisper_limpeza_escalas_2026';
 const STORAGE_KEY_GRUPOS_LIMPEZA = 'vila_cisper_limpeza_grupos_2026';
 
 export const GRUPOS_LIMPEZA_CANONICOS: GrupoLimpezaMembros[] = [
@@ -266,6 +268,7 @@ export function saveStoredLimpezaEscala(item: LimpezaEscalaItem): { success: boo
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
+    firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -277,6 +280,7 @@ export function deleteStoredLimpezaEscala(id: string): { success: boolean; data?
     const current = getStoredLimpezaEscalas();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
+    firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -286,7 +290,7 @@ export function deleteStoredLimpezaEscala(id: string): { success: boolean; data?
 export function saveBulkLimpezaEscala(
   newItems: LimpezaEscalaItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
-  targetMonthKey?: string
+  targetMonthKey?: string | string[]
 ): { success: boolean; data?: LimpezaEscalaItem[]; error?: string; count?: number } {
   try {
     const current = getStoredLimpezaEscalas();
@@ -295,7 +299,8 @@ export function saveBulkLimpezaEscala(
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
-      const filtered = current.filter((item) => item.mesChave !== targetMonthKey);
+      const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
+      const filtered = current.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
       const existingIds = new Set(current.map((i) => i.id));
@@ -309,6 +314,7 @@ export function saveBulkLimpezaEscala(
     }
 
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
+    firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -317,6 +323,7 @@ export function saveBulkLimpezaEscala(
 
 export function resetLimpezaToSample(): LimpezaEscalaItem[] {
   localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(LIMPEZA_ESCALAS_CANONICAS));
+  firebaseSync.saveAllLimpeza(LIMPEZA_ESCALAS_CANONICAS);
   return LIMPEZA_ESCALAS_CANONICAS;
 }
 

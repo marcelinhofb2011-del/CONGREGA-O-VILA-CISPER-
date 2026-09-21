@@ -1,14 +1,17 @@
 export type ScreenId =
   | 'inicio'
+  | 'programacao'
   | 'designacoes'
-  | 'vida-e-ministerio'
-  | 'limpeza'
   | 'servico-de-campo'
+  | 'limpeza'
+  | 'territorios'
+  | 'avisos'
+  | 'administracao'
+  | 'vida-e-ministerio'
   | 'discurso-publico'
   | 'secretario'
   | 'relatorios'
   | 'assistencia'
-  | 'territorios'
   | 'configuracoes';
 
 export type TextSize = 'sm' | 'md' | 'lg';

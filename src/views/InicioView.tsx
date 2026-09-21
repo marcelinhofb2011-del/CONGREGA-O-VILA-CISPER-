@@ -1,581 +1,552 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Calendar,
-  Bell,
-  Clock,
-  Mic,
-  ShieldCheck,
-  ChevronRight,
-  Sparkles,
-  Volume2,
-  Tv,
-  Users,
+  CalendarCheck,
   BookOpen,
+  Speech,
   Compass,
+  Users,
+  Sparkles,
+  Map,
+  AlertTriangle,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import { ScreenId } from '../types';
-import { getStoredEscalaDesignacoes, EscalaDesignacaoItem } from '../data/designacoesStorage';
-import { getStoredDiscursosBiblicos, DiscursoBiblicoItem } from '../data/discursoStorage';
-import { getStoredLimpezaEscala, LimpezaEscalaItem } from '../data/limpezaStorage';
-import { getStoredCampoFds, CampoFimDeSemanaItem } from '../data/campoStorage';
+import {
+  getStoredEscalaDesignacoes,
+  EscalaDesignacaoItem,
+  STORAGE_KEY_DESIGNACOES,
+} from '../data/designacoesStorage';
+import {
+  getStoredAvisos,
+  AvisoItem,
+  STORAGE_KEY_AVISOS,
+  STORAGE_KEY_AVISOS_VISUALIZADOS,
+  getAvisosVisualizadosIds,
+  marcarAvisoComoVisualizado,
+} from '../data/avisosStorage';
+import {
+  getHorariosReunioes,
+  HorariosReunioesConfig,
+  STORAGE_KEY_HORARIOS_REUNIOES,
+  DIAS_SEMANA_MAPA_INDICE,
+} from '../data/horariosReunioesStorage';
 import { parseItemDate } from '../utils/dateUtils';
+import bannerReuniaoOficial from '../assets/images/1011229_univ_pnr_lg.jpg';
 
 interface InicioViewProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
-export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
-  // Carrega dados dinâmicos da congregação
-  const todasDesignacoes = useMemo(() => getStoredEscalaDesignacoes(), []);
-  const todosDiscursos = useMemo(() => getStoredDiscursosBiblicos(), []);
-  const todasLimpezas = useMemo(() => getStoredLimpezaEscala(), []);
-  const todosCamposFds = useMemo(() => getStoredCampoFds(), []);
+const DIAS_SEMANA_EXTENSO = [
+  'Domingo',
+  'Segunda-feira',
+  'Terça-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sábado',
+];
 
-  // Encontra reuniões mais próximas baseadas na data atual real
-  const proximasReunioes = useMemo(() => {
+const MESES_EXTENSO = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
+
+export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
+  const [escala, setEscala] = useState<EscalaDesignacaoItem[]>([]);
+  const [avisos, setAvisos] = useState<AvisoItem[]>([]);
+  const [visualizadosIds, setVisualizadosIds] = useState<string[]>([]);
+  const [horariosConfig, setHorariosConfig] = useState<HorariosReunioesConfig>(() =>
+    getHorariosReunioes()
+  );
+
+  // Carregar dados e sincronizar com eventos do storage/Firebase
+  const carregarDados = () => {
+    setEscala(getStoredEscalaDesignacoes());
+    setAvisos(getStoredAvisos());
+    setVisualizadosIds(getAvisosVisualizadosIds());
+    setHorariosConfig(getHorariosReunioes());
+  };
+
+  useEffect(() => {
+    carregarDados();
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === STORAGE_KEY_DESIGNACOES ||
+        e.key === STORAGE_KEY_AVISOS ||
+        e.key === STORAGE_KEY_AVISOS_VISUALIZADOS ||
+        e.key === STORAGE_KEY_HORARIOS_REUNIOES ||
+        !e.key
+      ) {
+        carregarDados();
+      }
+    };
+
+    const handleDesignacoesUpdate = () => {
+      setEscala(getStoredEscalaDesignacoes());
+    };
+
+    const handleAvisosUpdate = () => {
+      setAvisos(getStoredAvisos());
+    };
+
+    const handleVisualizadosUpdate = (e: CustomEvent<string[]>) => {
+      if (Array.isArray(e.detail)) {
+        setVisualizadosIds(e.detail);
+      } else {
+        setVisualizadosIds(getAvisosVisualizadosIds());
+      }
+    };
+
+    const handleHorariosUpdate = (e: CustomEvent<HorariosReunioesConfig>) => {
+      if (e.detail) {
+        setHorariosConfig(e.detail);
+      } else {
+        setHorariosConfig(getHorariosReunioes());
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('designacoes-firebase-updated', handleDesignacoesUpdate);
+    window.addEventListener('avisos-firebase-updated', handleAvisosUpdate);
+    window.addEventListener(
+      'avisos-visualizados-updated',
+      handleVisualizadosUpdate as EventListener
+    );
+    window.addEventListener(
+      'horarios-reunioes-updated',
+      handleHorariosUpdate as EventListener
+    );
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('designacoes-firebase-updated', handleDesignacoesUpdate);
+      window.removeEventListener('avisos-firebase-updated', handleAvisosUpdate);
+      window.removeEventListener(
+        'avisos-visualizados-updated',
+        handleVisualizadosUpdate as EventListener
+      );
+      window.removeEventListener(
+        'horarios-reunioes-updated',
+        handleHorariosUpdate as EventListener
+      );
+    };
+  }, []);
+
+  // Fila de avisos ativos que o usuário ainda NÃO confirmou neste dispositivo
+  const avisosNaoVisualizados = useMemo(() => {
+    if (!avisos || avisos.length === 0) return [];
+
+    // Filtra apenas avisos ativos (ou sem campo ativo explícito, considerado ativo por padrão)
+    const ativos = avisos.filter((a) => a.ativo !== false);
+
+    // Filtra apenas os que este dispositivo AINDA NÃO visualizou
+    const pendentes = ativos.filter((a) => !visualizadosIds.includes(a.id));
+
+    // Ordena para exibir prioritariamente fixados e depois por data mais recente
+    return pendentes.sort((a, b) => {
+      if (a.fixado && !b.fixado) return -1;
+      if (!a.fixado && b.fixado) return 1;
+
+      const partesA = a.dataPublicacao ? a.dataPublicacao.split('/') : [];
+      const partesB = b.dataPublicacao ? b.dataPublicacao.split('/') : [];
+
+      if (partesA.length === 3 && partesB.length === 3) {
+        const timeA = new Date(
+          parseInt(partesA[2], 10),
+          parseInt(partesA[1], 10) - 1,
+          parseInt(partesA[0], 10)
+        ).getTime();
+        const timeB = new Date(
+          parseInt(partesB[2], 10),
+          parseInt(partesB[1], 10) - 1,
+          parseInt(partesB[0], 10)
+        ).getTime();
+        return timeB - timeA;
+      }
+      return 0;
+    });
+  }, [avisos, visualizadosIds]);
+
+  // Exibe exatamente o primeiro aviso não visualizado da fila (um por vez)
+  const avisoAtualPopUp = avisosNaoVisualizados.length > 0 ? avisosNaoVisualizados[0] : null;
+
+  // Ao clicar em ENTENDI: marca como visualizado de forma permanente no dispositivo
+  // e avança automaticamente para o próximo não visualizado (se houver)
+  const handleEntendiAviso = (id: string) => {
+    marcarAvisoComoVisualizado(id);
+    setVisualizadosIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  // 1. Data Atual de Maneira Simples
+  const dataAtualFormatada = useMemo(() => {
+    const hoje = new Date();
+    const diaSemana = DIAS_SEMANA_EXTENSO[hoje.getDay()];
+    const dia = hoje.getDate();
+    const mes = MESES_EXTENSO[hoje.getMonth()];
+    const ano = hoje.getFullYear();
+    return `${diaSemana}, ${dia} de ${mes} de ${ano}`;
+  }, []);
+
+  // 2. Próxima Reunião
+  const proximaReuniaoInfo = useMemo(() => {
+    if (!escala || escala.length === 0) return null;
+
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    const comData = todasDesignacoes
+    const comData = escala
       .map((item) => ({
         item,
         date: parseItemDate(item.dia, item.mes),
       }))
       .filter((d): d is { item: EscalaDesignacaoItem; date: Date } => d.date !== null);
 
-    // Filtra reuniões a partir de hoje em ordem cronológica
+    if (comData.length === 0) return null;
+
+    // Filtra reuniões a partir de hoje
     const futuras = comData
       .filter((r) => r.date.getTime() >= hoje.getTime())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map((r) => r.item);
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    if (futuras.length > 0) {
-      return futuras.slice(0, 8);
-    }
+    // Se houver futuras a partir de hoje, pega a primeira; senão, a mais próxima cadastrada
+    const itemAlvo = futuras.length > 0 ? futuras[0] : comData[comData.length - 1];
+    if (!itemAlvo) return null;
 
-    // Fallback: se todas já passaram ou nenhuma futura encontrada, exibe as mais recentes
-    return todasDesignacoes.slice(-8);
-  }, [todasDesignacoes]);
+    const d = itemAlvo.date;
+    const diaSemana = DIAS_SEMANA_EXTENSO[d.getDay()];
+    const diaMes = `${d.getDate()} de ${MESES_EXTENSO[d.getMonth()]}`;
 
-  // Reuniões para seleção rápida na tela inicial
-  const reunioesExibicao = proximasReunioes;
+    const diaIndiceMeio = DIAS_SEMANA_MAPA_INDICE[horariosConfig.meioDeSemana.dia];
+    const diaIndiceFds = DIAS_SEMANA_MAPA_INDICE[horariosConfig.fimDeSemana.dia];
 
-  // Reunião selecionada no quadro de próximas designações (inicia na primeira reunião válida mais próxima)
-  const [reuniaoSelecionadaId, setReuniaoSelecionadaId] = useState<string>(() => {
-    return proximasReunioes[0]?.id || todasDesignacoes[0]?.id || '';
-  });
+    const ehFimDeSemana = d.getDay() === diaIndiceFds || (d.getDay() !== diaIndiceMeio && (d.getDay() === 0 || d.getDay() === 6));
+    const tipoReuniao = itemAlvo.item.observacao || (ehFimDeSemana
+      ? 'Reunião de fim de semana'
+      : 'Reunião de meio de semana');
 
-  // Atualiza a reunião ativa caso a lista mude
-  useEffect(() => {
-    if (proximasReunioes.length > 0) {
-      setReuniaoSelecionadaId((atual) => {
-        const existe = proximasReunioes.some((r) => r.id === atual);
-        return existe && atual ? atual : proximasReunioes[0].id;
-      });
-    }
-  }, [proximasReunioes]);
+    // Horário automático configurado pelos responsáveis
+    const horario = ehFimDeSemana
+      ? horariosConfig.fimDeSemana.horario
+      : horariosConfig.meioDeSemana.horario;
 
-  const reuniaoAtiva: EscalaDesignacaoItem | undefined = useMemo(() => {
-    return (
-      reunioesExibicao.find((r) => r.id === reuniaoSelecionadaId) ||
-      reunioesExibicao[0] ||
-      todasDesignacoes[0]
+    return {
+      item: itemAlvo.item,
+      tipoReuniao,
+      diaSemana,
+      data: diaMes,
+      dataCompleta: `${diaSemana}, ${diaMes}`,
+      horario,
+    };
+  }, [escala, horariosConfig]);
+
+  // 3. Próximas Designações estruturadas de forma resumida
+  const designacoesResumo = useMemo(() => {
+    if (!proximaReuniaoInfo) return null;
+    const item = proximaReuniaoInfo.item;
+
+    const hasAnyDesignacao = Boolean(
+      (item.indicador && item.indicador.trim()) ||
+      (item.microfone && item.microfone.trim()) ||
+      (item.audio && item.audio.trim()) ||
+      (item.video && item.video.trim()) ||
+      (item.leitor && item.leitor.trim())
     );
-  }, [reunioesExibicao, reuniaoSelecionadaId, todasDesignacoes]);
+    if (!hasAnyDesignacao) return null;
 
-  // Próximo discurso bíblico a partir da data atual
-  const proximoDiscurso: DiscursoBiblicoItem | undefined = useMemo(() => {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const indicador = item.indicador && item.indicador.trim() ? item.indicador.trim() : 'A definir';
+    const microfone = item.microfone && item.microfone.trim() ? item.microfone.trim() : 'A definir';
 
-    const comData = todosDiscursos
-      .map((d) => ({
-        item: d,
-        date: parseItemDate(d.data, d.mes),
-      }))
-      .filter((d): d is { item: DiscursoBiblicoItem; date: Date } => d.date !== null);
-
-    const futuros = comData
-      .filter((d) => d.date.getTime() >= hoje.getTime())
-      .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    if (futuros.length > 0) {
-      return futuros[0].item;
+    // Áudio e vídeo agrupados conforme especificação
+    let audioVideo = 'A definir';
+    const audio = item.audio?.trim();
+    const video = item.video?.trim();
+    if (audio && video) {
+      audioVideo = audio === video ? audio : `${audio} / ${video}`;
+    } else if (audio) {
+      audioVideo = audio;
+    } else if (video) {
+      audioVideo = video;
     }
 
-    return comData.length > 0 ? comData[comData.length - 1].item : todosDiscursos[0];
-  }, [todosDiscursos]);
+    const leitor = item.leitor && item.leitor.trim() ? item.leitor.trim() : 'A definir';
 
-  // Próxima limpeza da congregação a partir da data atual
-  const proximaLimpeza: LimpezaEscalaItem | undefined = useMemo(() => {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    return {
+      indicador,
+      microfone,
+      audioVideo,
+      leitor,
+    };
+  }, [proximaReuniaoInfo]);
 
-    const comData = todasLimpezas
-      .map((l) => ({
-        item: l,
-        date: parseItemDate(l.dias, l.mes || l.mesChave),
-      }))
-      .filter((l): l is { item: LimpezaEscalaItem; date: Date } => l.date !== null);
-
-    const futuras = comData
-      .filter((l) => l.date.getTime() >= hoje.getTime())
-      .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    if (futuras.length > 0) {
-      return futuras[0].item;
-    }
-
-    return comData.length > 0 ? comData[comData.length - 1].item : todasLimpezas[0];
-  }, [todasLimpezas]);
-
-  // Próximas saídas de campo no fim de semana a partir da data atual
-  const proximoCampo: CampoFimDeSemanaItem | undefined = useMemo(() => {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    const comData = todosCamposFds
-      .map((c) => ({
-        item: c,
-        date: parseItemDate(c.data, c.mes || c.mesChave),
-      }))
-      .filter((c): c is { item: CampoFimDeSemanaItem; date: Date } => c.date !== null);
-
-    const futuros = comData
-      .filter((c) => c.date.getTime() >= hoje.getTime())
-      .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    if (futuros.length > 0) {
-      return futuros[0].item;
-    }
-
-    return comData.length > 0 ? comData[comData.length - 1].item : todosCamposFds[0];
-  }, [todosCamposFds]);
+  // 4. Acessos Principais solicitados
+  const botoesAcessoPrincipal = [
+    {
+      id: 'btn-acesso-designacoes',
+      label: 'Designações',
+      screen: 'designacoes' as ScreenId,
+      icon: CalendarCheck,
+    },
+    {
+      id: 'btn-acesso-vida-ministerio',
+      label: 'Vida e Ministério',
+      screen: 'vida-e-ministerio' as ScreenId,
+      icon: BookOpen,
+    },
+    {
+      id: 'btn-acesso-discurso-publico',
+      label: 'Discurso Público',
+      screen: 'discurso-publico' as ScreenId,
+      icon: Speech,
+    },
+    {
+      id: 'btn-acesso-servico-campo',
+      label: 'Serviço de Campo',
+      screen: 'servico-de-campo' as ScreenId,
+      icon: Compass,
+    },
+    {
+      id: 'btn-acesso-assistencia',
+      label: 'Assistência',
+      screen: 'assistencia' as ScreenId,
+      icon: Users,
+    },
+    {
+      id: 'btn-acesso-limpeza',
+      label: 'Grupo de Limpeza',
+      screen: 'limpeza' as ScreenId,
+      icon: Sparkles,
+    },
+    {
+      id: 'btn-acesso-territorios',
+      label: 'Território',
+      screen: 'territorios' as ScreenId,
+      icon: Map,
+    },
+  ];
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Barra de Identificação Padrão da Congregação */}
-      <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Congregação Vila Cisper (67744)
-          </span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Quadro Geral de Atividades
-          </span>
-        </div>
-        <h1 className="mt-2 text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-          Painel Principal da Congregação
+    <div className="mx-auto w-full max-w-2xl space-y-8 pb-16 pt-2">
+      {/* ------------------------------------------------------------- */}
+      {/* 1. CABEÇALHO                                                  */}
+      {/* ------------------------------------------------------------- */}
+      <header
+        id="cabecalho-quadro"
+        className="border-b border-slate-200 pb-5 dark:border-slate-800"
+      >
+        <h1 className="text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+          CONGREGAÇÃO: VILA CISPER
         </h1>
-        <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 sm:text-sm">
-          Programação semanal, próximas designações e informações relevantes para as atividades da Congregação Vila Cisper.
+        <p className="mt-1.5 text-base font-semibold capitalize text-slate-600 dark:text-slate-400 sm:text-lg">
+          {dataAtualFormatada}
         </p>
       </header>
 
-      {/* Programação Semanal de Reuniões */}
-      <section aria-labelledby="section-programacao" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-            <h2 id="section-programacao" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
-              Programação Semanal de Reuniões
-            </h2>
-          </div>
-          <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            Salão do Reino
-          </span>
-        </div>
+      {/* ------------------------------------------------------------- */}
+      {/* BANNER VISUAL DISCRETO E MODERNO                              */}
+      {/* ------------------------------------------------------------- */}
+      <div
+        id="banner-horizontal-inicio"
+        className="overflow-hidden rounded-xl border border-slate-200 shadow-2xs dark:border-slate-800"
+      >
+        <img
+          src={bannerReuniaoOficial}
+          alt="Reunião congregacional e estudo bíblico"
+          className="h-28 sm:h-36 w-full object-cover object-center"
+          referrerPolicy="no-referrer"
+          loading="eager"
+        />
+      </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {/* Reunião de Meio de Semana */}
-          <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center rounded-sm bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                  Meio de Semana
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-400">
-                  <Clock className="h-3.5 w-3.5 text-slate-400" />
-                  Quinta-feira às 19:30
-                </span>
-              </div>
-              <h3 className="mt-2 text-sm font-bold text-slate-900 dark:text-white">
-                Nossa Vida e Ministério Cristão
-              </h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Tesouros da Palavra de Deus &bull; Faça Seu Melhor no Ministério &bull; Nossa Vida Cristã
-              </p>
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Programa e apostilas da semana
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigate('vida-e-ministerio')}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <span>Ver programa</span>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+      {/* ------------------------------------------------------------- */}
+      {/* 2. PRÓXIMA REUNIÃO                                            */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-proxima-reuniao" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          PRÓXIMA REUNIÃO
+        </h2>
 
-          {/* Reunião de Fim de Semana */}
-          <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center rounded-sm bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-                  Fim de Semana
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-400">
-                  <Clock className="h-3.5 w-3.5 text-slate-400" />
-                  Domingo às 18:00
-                </span>
-              </div>
-              <h3 className="mt-2 text-sm font-bold text-slate-900 dark:text-white">
-                Discurso Público e Estudo de A Sentinela
-              </h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Discurso bíblico temático de 30 min seguido pelo estudo da revista semanal
-              </p>
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Temas, oradores e leitores
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigate('discurso-publico')}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <span>Ver programa</span>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Próximas Designações das Reuniões (Dinâmico com dados reais de Vila Cisper) */}
-      <section aria-labelledby="section-designacoes-proximas" className="space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Mic className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-            <h2 id="section-designacoes-proximas" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
-              Próximas Designações das Reuniões
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => onNavigate('designacoes')}
-            className="inline-flex items-center gap-1 self-start sm:self-auto text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            <span>Ver escala completa</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-          {/* Seletor de Data da Reunião */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Selecione a reunião:
-              </span>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {reunioesExibicao.map((r) => {
-                  const isSelected = r.id === reuniaoAtiva?.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setReuniaoSelecionadaId(r.id)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                        isSelected
-                          ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {r.dia}
-                    </button>
-                  );
-                })}
-              </div>
+        {proximaReuniaoInfo ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:p-6 space-y-2.5">
+            <div className="text-sm font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              {proximaReuniaoInfo.tipoReuniao}
             </div>
 
-            {reuniaoAtiva && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 self-start sm:self-auto">
-                <Calendar className="h-3.5 w-3.5" />
-                <span>{reuniaoAtiva.mes}</span>
+            <div className="text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+              {proximaReuniaoInfo.dataCompleta}
+            </div>
+
+            {proximaReuniaoInfo.horario && (
+              <div className="flex items-center gap-2 pt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100 sm:text-xl">
+                <Clock className="h-5 w-5 text-slate-500 shrink-0" />
+                <span>{proximaReuniaoInfo.horario}</span>
               </div>
             )}
           </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-5 text-base font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+            Nenhuma reunião cadastrada no momento.
+          </div>
+        )}
+      </section>
 
-          {/* Grade Responsiva de Irmãos Designados */}
-          {reuniaoAtiva ? (
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Indicadores */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    <Users className="h-4 w-4 text-slate-500" />
-                    <span>Indicador</span>
-                  </div>
-                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    2 irmãos
-                  </span>
-                </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                  {reuniaoAtiva.indicador || 'A definir'}
-                </p>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Auditório e recepção do Salão
-                </span>
-              </div>
+      {/* ------------------------------------------------------------- */}
+      {/* 3. PRÓXIMAS DESIGNAÇÕES                                       */}
+      {/* Exibição resumida e objetiva: Indicador, Microfone,           */}
+      {/* Áudio e vídeo, Leitor                                         */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-proximas-designacoes" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          PRÓXIMAS DESIGNAÇÕES
+        </h2>
 
-              {/* Microfones Volantes */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    <Mic className="h-4 w-4 text-slate-500" />
-                    <span>Microfone</span>
-                  </div>
-                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    2 irmãos
-                  </span>
-                </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                  {reuniaoAtiva.microfone || 'A definir'}
-                </p>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Microfones volantes no auditório
-                </span>
-              </div>
-
-              {/* Sistema de Áudio */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    <Volume2 className="h-4 w-4 text-slate-500" />
-                    <span>Áudio</span>
-                  </div>
-                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    1 irmão
-                  </span>
-                </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                  {reuniaoAtiva.audio || 'A definir'}
-                </p>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Mesa de som e microfones
-                </span>
-              </div>
-
-              {/* Sistema de Vídeo */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    <Tv className="h-4 w-4 text-slate-500" />
-                    <span>Vídeo</span>
-                  </div>
-                  <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    1 irmão
-                  </span>
-                </div>
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                  {reuniaoAtiva.video || 'A definir'}
-                </p>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Transmissão e telas do auditório
-                </span>
-              </div>
-
-              {/* Leitor de A Sentinela (Reunião de Fim de Semana) */}
-              {reuniaoAtiva.leitor ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      <BookOpen className="h-4 w-4 text-slate-500" />
-                      <span>Leitor de A Sentinela</span>
-                    </div>
-                    <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      1 irmão
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                    {reuniaoAtiva.leitor}
-                  </p>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Leitura dos parágrafos do estudo
-                  </span>
-                </div>
-              ) : null}
-
-              {/* Presidente da Reunião (quando cadastrado) */}
-              {reuniaoAtiva.presidencia ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      <Sparkles className="h-4 w-4 text-slate-500" />
-                      <span>Presidente</span>
-                    </div>
-                    <span className="rounded bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      1 irmão
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                    {reuniaoAtiva.presidencia}
-                  </p>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Presidência da reunião de fim de semana
-                  </span>
-                </div>
-              ) : null}
+        {designacoesResumo ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:p-6 space-y-3">
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Indicador:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.indicador}
+              </span>
             </div>
-          ) : (
-            <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-              Nenhuma escala cadastrada para exibição no momento.
-            </p>
-          )}
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Microfone:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.microfone}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Áudio e vídeo:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.audioVideo}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Leitor:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.leitor}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-5 text-base font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+            Nenhuma designação cadastrada no momento.
+          </div>
+        )}
+      </section>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 4. ACESSOS PRINCIPAIS                                         */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-acessos-principais" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          ACESSOS PRINCIPAIS
+        </h2>
+
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {botoesAcessoPrincipal.map((botao) => {
+            const Icon = botao.icon;
+            return (
+              <button
+                key={botao.id}
+                id={botao.id}
+                type="button"
+                onClick={() => onNavigate(botao.screen)}
+                className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-left shadow-2xs hover:border-slate-400 hover:bg-slate-50 active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-850"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  <Icon className="h-4.5 w-4.5" />
+                </div>
+                <span className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
+                  {botao.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      {/* Avisos Importantes & Informações Relevantes */}
-      <section aria-labelledby="section-avisos" className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Bell className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-          <h2 id="section-avisos" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
-            Avisos Importantes e Lembretes da Reunião
-          </h2>
-        </div>
-
-        <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white shadow-xs dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-          {/* Lembrete de Limpeza do Salão */}
-          <div className="p-4 space-y-1 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-1">
-              <span className="font-semibold text-slate-900 dark:text-white text-sm">
-                Limpeza do Salão do Reino nesta semana
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {proximaLimpeza ? `${proximaLimpeza.mes} &bull; Dias ${proximaLimpeza.dias}` : 'Programação Semanal'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 sm:text-sm leading-relaxed">
-              {proximaLimpeza ? (
-                <>
-                  A limpeza semanal está a cargo do{' '}
-                  <strong className="font-semibold text-slate-800 dark:text-slate-200">
-                    {proximaLimpeza.grupo}
-                  </strong>{' '}
-                  ({proximaLimpeza.responsaveis}).
-                </>
-              ) : (
-                'A limpeza semanal é coordenada pelos grupos de serviço designados.'
+      {/* ------------------------------------------------------------- */}
+      {/* POP-UP TEMPORÁRIO DE AVISOS (EXIBE 1 POR VEZ ATÉ "ENTENDI")   */}
+      {/* ------------------------------------------------------------- */}
+      {avisoAtualPopUp && (
+        <div
+          id="modal-aviso-popup"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+        >
+          <div className="relative w-full max-w-lg rounded-2xl border-2 border-amber-400 bg-white p-6 shadow-2xl dark:border-amber-600 dark:bg-slate-900 sm:p-7">
+            {/* Cabeçalho do Pop-up com indicador de contagem se houver múltiplos */}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <span className="text-xs font-black uppercase tracking-wider">
+                  Comunicado da Congregação
+                </span>
+              </div>
+              {avisosNaoVisualizados.length > 1 && (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  1 de {avisosNaoVisualizados.length}
+                </span>
               )}
-            </p>
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => onNavigate('limpeza')}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <span>Ver escala de limpeza</span>
-                <ChevronRight className="h-3 w-3" />
-              </button>
             </div>
-          </div>
 
-          {/* Próximo Discurso Bíblico */}
-          <div className="p-4 space-y-1 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-1">
-              <span className="font-semibold text-slate-900 dark:text-white text-sm">
-                Discurso Público do próximo fim de semana
+            {/* Título do Aviso */}
+            <h3 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
+              {avisoAtualPopUp.titulo}
+            </h3>
+
+            {/* Categoria, data e autor */}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                {avisoAtualPopUp.categoria}
               </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {proximoDiscurso
-                  ? `Data: ${proximoDiscurso.data.includes('/20') ? proximoDiscurso.data : `${proximoDiscurso.data}/2026`}`
-                  : 'Reunião de Fim de Semana'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 sm:text-sm leading-relaxed">
-              {proximoDiscurso ? (
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                <span>{avisoAtualPopUp.dataPublicacao}</span>
+              </div>
+              {avisoAtualPopUp.autor && (
                 <>
-                  Tema:{' '}
-                  <strong className="font-semibold text-slate-800 dark:text-slate-200">
-                    "{proximoDiscurso.tema}"
-                  </strong>{' '}
-                  &bull; Orador: {proximoDiscurso.orador || 'Orador Convidado'}{' '}
-                  {proximoDiscurso.presidente ? `&bull; Presidente: ${proximoDiscurso.presidente}` : ''}
+                  <span>&bull;</span>
+                  <span>{avisoAtualPopUp.autor}</span>
                 </>
-              ) : (
-                'Programação temática de 30 minutos seguida pelo Estudo de A Sentinela.'
               )}
-            </p>
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => onNavigate('discurso-publico')}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <span>Ver programação de discursos</span>
-                <ChevronRight className="h-3 w-3" />
-              </button>
             </div>
-          </div>
 
-          {/* Orientações para Irmãos Designados */}
-          <div className="p-4 space-y-1 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-1">
-              <span className="font-semibold text-slate-900 dark:text-white text-sm">
-                Orientações para os irmãos com designação
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Procedimento padrão
-              </span>
+            {/* Conteúdo do Comunicado */}
+            <div className="mt-4 max-h-[60vh] overflow-y-auto rounded-xl bg-amber-50/60 p-4 border border-amber-200/60 dark:bg-amber-950/20 dark:border-amber-800/40">
+              <p className="whitespace-pre-line text-base leading-relaxed text-slate-800 dark:text-slate-200">
+                {avisoAtualPopUp.conteudo}
+              </p>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 sm:text-sm leading-relaxed">
-              Solicita-se aos irmãos designados para microfones, indicadores, áudio e vídeo que cheguem com <strong>20 minutos de antecedência</strong> para testes técnicos de som e acolhimento dos presentes.
-            </p>
-          </div>
 
-          {/* Serviço de Campo no Fim de Semana */}
-          <div className="p-4 space-y-1 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-1">
-              <span className="font-semibold text-slate-900 dark:text-white text-sm">
-                Arranjos para o Serviço de Campo
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Fim de Semana
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 sm:text-sm leading-relaxed">
-              {proximoCampo ? (
-                <>
-                  Saídas de pregação aos sábados e domingos no Salão do Reino e pontos dos grupos. Próximo dirigente:{' '}
-                  <strong className="font-semibold text-slate-800 dark:text-slate-200">
-                    {proximoCampo.dirigente}
-                  </strong>{' '}
-                  ({proximoCampo.diaSemana} - {proximoCampo.data}).
-                </>
-              ) : (
-                'Saídas de pregação regulares aos sábados e domingos no Salão do Reino e residências dos grupos.'
-              )}
-            </p>
-            <div className="pt-2">
+            {/* Botão ENTENDI (Registra visualização e fecha / avança para o próximo) */}
+            <div className="mt-6 flex justify-end">
               <button
+                id="btn-entendi-aviso-popup"
                 type="button"
-                onClick={() => onNavigate('servico-de-campo')}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                onClick={() => handleEntendiAviso(avisoAtualPopUp.id)}
+                className="w-full sm:w-auto min-h-[46px] rounded-xl bg-amber-600 px-8 py-3 text-base font-black text-white shadow-md hover:bg-amber-700 active:scale-[0.99] transition-all"
               >
-                <span>Ver escala de campo</span>
-                <ChevronRight className="h-3 w-3" />
+                ENTENDI
               </button>
             </div>
           </div>
         </div>
-      </section>
+      )}
     </div>
   );
 };

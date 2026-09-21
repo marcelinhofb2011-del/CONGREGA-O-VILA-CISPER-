@@ -5,6 +5,8 @@ export interface CampoDiaSemanaItem {
   localOuNota?: string;
 }
 
+import { firebaseSync } from './firebaseSyncService';
+
 export interface CampoFimDeSemanaItem {
   id: string;
   mes: string; // Ex: 'Janeiro', 'Fevereiro'
@@ -28,7 +30,7 @@ export interface CampoGrupo {
   dataAtualizacao?: string;
 }
 
-const STORAGE_KEY_CAMPO_FDS = 'vila_cisper_campo_fds_2026';
+export const STORAGE_KEY_CAMPO_FDS = 'vila_cisper_campo_fds_2026';
 const STORAGE_KEY_CAMPO_SEMANA = 'vila_cisper_campo_semana_2026';
 
 export const DIAS_SEMANA_CAMPO_CANONICO: CampoDiaSemanaItem[] = [
@@ -195,6 +197,7 @@ export function saveStoredCampoFdsItem(item: CampoFimDeSemanaItem): { success: b
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_CAMPO_FDS, JSON.stringify(updated));
+    firebaseSync.saveAllCampo(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -206,6 +209,7 @@ export function deleteStoredCampoFdsItem(id: string): { success: boolean; data?:
     const current = getStoredCampoFds();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_CAMPO_FDS, JSON.stringify(updated));
+    firebaseSync.saveAllCampo(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -215,7 +219,7 @@ export function deleteStoredCampoFdsItem(id: string): { success: boolean; data?:
 export function saveBulkCampoFds(
   newItems: CampoFimDeSemanaItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
-  targetMonthKey?: string
+  targetMonthKey?: string | string[]
 ): { success: boolean; data?: CampoFimDeSemanaItem[]; error?: string; count?: number } {
   try {
     const current = getStoredCampoFds();
@@ -224,7 +228,8 @@ export function saveBulkCampoFds(
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
-      const filtered = current.filter((item) => item.mesChave !== targetMonthKey);
+      const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
+      const filtered = current.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
       const existingIds = new Set(current.map((i) => i.id));
@@ -238,6 +243,7 @@ export function saveBulkCampoFds(
     }
 
     localStorage.setItem(STORAGE_KEY_CAMPO_FDS, JSON.stringify(updated));
+    firebaseSync.saveAllCampo(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -246,6 +252,7 @@ export function saveBulkCampoFds(
 
 export function resetCampoToSample(): CampoFimDeSemanaItem[] {
   localStorage.setItem(STORAGE_KEY_CAMPO_FDS, JSON.stringify(CAMPO_FDS_CANONICO));
+  firebaseSync.saveAllCampo(CAMPO_FDS_CANONICO);
   return CAMPO_FDS_CANONICO;
 }
 
@@ -258,4 +265,156 @@ export function saveStoredGrupo(g: CampoGrupo): CampoGrupo[] {
 }
 export function deleteStoredGrupo(id: string): CampoGrupo[] {
   return [];
+}
+
+// =========================================================================
+// MÓDULO SERVIÇO DE CAMPO (PROGRAMAÇÃO OFICIAL)
+// Campos: Data, Horário, Ponto de encontro, Irmão responsável
+// =========================================================================
+
+export interface CampoProgramacao {
+  id: string;
+  data: string; // Ex: '26/09/2026' ou '26/09'
+  horario: string; // Ex: '09:00' ou '09:15'
+  pontoEncontro: string; // Ex: 'Salão do Reino'
+  responsavel: string; // Ex: 'Dhiego'
+}
+
+export const STORAGE_KEY_CAMPO_PROGRAMACAO = 'vila_cisper_campo_programacao_2026';
+
+export const CAMPO_PROGRAMACAO_INICIAL: CampoProgramacao[] = [
+  {
+    id: 'prog-campo-1',
+    data: '26/09/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Dhiego',
+  },
+  {
+    id: 'prog-campo-2',
+    data: '27/09/2026',
+    horario: '09:15',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Marcelo',
+  },
+  {
+    id: 'prog-campo-3',
+    data: '03/10/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Samuel',
+  },
+  {
+    id: 'prog-campo-4',
+    data: '04/10/2026',
+    horario: '09:15',
+    pontoEncontro: 'Ponto dos Grupos',
+    responsavel: 'Danilo',
+  },
+  {
+    id: 'prog-campo-5',
+    data: '10/10/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Hermes',
+  },
+  {
+    id: 'prog-campo-6',
+    data: '11/10/2026',
+    horario: '09:15',
+    pontoEncontro: 'Ponto dos Grupos',
+    responsavel: 'Kleber',
+  },
+  {
+    id: 'prog-campo-7',
+    data: '17/10/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Airton',
+  },
+  {
+    id: 'prog-campo-8',
+    data: '18/10/2026',
+    horario: '09:15',
+    pontoEncontro: 'Ponto dos Grupos',
+    responsavel: 'Vilson',
+  },
+  {
+    id: 'prog-campo-9',
+    data: '24/10/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Marcelo',
+  },
+  {
+    id: 'prog-campo-10',
+    data: '25/10/2026',
+    horario: '09:15',
+    pontoEncontro: 'Ponto dos Grupos',
+    responsavel: 'Geovane',
+  },
+  {
+    id: 'prog-campo-11',
+    data: '31/10/2026',
+    horario: '09:00',
+    pontoEncontro: 'Salão do Reino',
+    responsavel: 'Kleber',
+  },
+];
+
+export function getStoredCampoProgramacao(): CampoProgramacao[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CAMPO_PROGRAMACAO);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(CAMPO_PROGRAMACAO_INICIAL));
+      return CAMPO_PROGRAMACAO_INICIAL;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : CAMPO_PROGRAMACAO_INICIAL;
+  } catch {
+    return CAMPO_PROGRAMACAO_INICIAL;
+  }
+}
+
+export function saveStoredCampoProgramacao(item: CampoProgramacao): {
+  success: boolean;
+  data?: CampoProgramacao[];
+  error?: string;
+} {
+  try {
+    const current = getStoredCampoProgramacao();
+    const idx = current.findIndex((i) => i.id === item.id);
+    let updated: CampoProgramacao[];
+    if (idx >= 0) {
+      updated = [...current];
+      updated[idx] = item;
+    } else {
+      updated = [item, ...current];
+    }
+    localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    if ((firebaseSync as any).saveAllCampoProgramacao) {
+      (firebaseSync as any).saveAllCampoProgramacao(updated);
+    }
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export function deleteStoredCampoProgramacao(id: string): {
+  success: boolean;
+  data?: CampoProgramacao[];
+  error?: string;
+} {
+  try {
+    const current = getStoredCampoProgramacao();
+    const updated = current.filter((i) => i.id !== id);
+    localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    if ((firebaseSync as any).saveAllCampoProgramacao) {
+      (firebaseSync as any).saveAllCampoProgramacao(updated);
+    }
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }

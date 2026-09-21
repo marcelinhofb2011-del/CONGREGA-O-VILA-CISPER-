@@ -304,10 +304,10 @@ export const LimpezaView: React.FC = () => {
             <button
               onClick={() => setIsBulkModalOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
-              title="Importar ou exportar planilha em lote (Excel / CSV)"
+              title="Selecionar planilha (Excel / CSV) para importar escala de limpeza"
             >
               <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Planilhas / Lote</span>
+              <span>Importar Planilha</span>
             </button>
           )}
 
@@ -540,7 +540,12 @@ export const LimpezaView: React.FC = () => {
 
           {/* Tabelas por Mês */}
           <div className="divide-y divide-emerald-200 dark:divide-slate-800">
-            {(Object.entries(escalasAgrupadas) as [string, LimpezaEscalaItem[]][]).map(([mesTitulo, itensDoMes]) => (
+            {Object.keys(escalasAgrupadas).length === 0 ? (
+              <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                <p className="text-sm font-semibold">Nenhuma programação cadastrada no momento.</p>
+              </div>
+            ) : (
+              (Object.entries(escalasAgrupadas) as [string, LimpezaEscalaItem[]][]).map(([mesTitulo, itensDoMes]) => (
               <div key={mesTitulo} className="p-4 sm:p-5">
                 {/* Barra do Mês estilo PDF */}
                 <div className="mb-3 rounded-lg bg-emerald-600 px-4 py-2 text-center font-black uppercase tracking-widest text-white shadow-sm">
@@ -623,7 +628,7 @@ export const LimpezaView: React.FC = () => {
                   </table>
                 </div>
               </div>
-            ))}
+            )))}
           </div>
 
           {/* ========================================================================= */}

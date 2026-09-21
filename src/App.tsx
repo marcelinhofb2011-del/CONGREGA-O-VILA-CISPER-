@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { BottomNav } from './components/BottomNav';
 import { MobileDrawer } from './components/MobileDrawer';
 import { InicioView } from './views/InicioView';
+import { ProgramacaoGeralView } from './views/ProgramacaoGeralView';
 import { DesignacoesView } from './views/DesignacoesView';
 import { VidaEMinisterioView } from './views/VidaEMinisterioView';
 import { LimpezaView } from './views/LimpezaView';
@@ -12,6 +13,8 @@ import { ServicoDeCampoView } from './views/ServicoDeCampoView';
 import { DiscursoPublicoView } from './views/DiscursoPublicoView';
 import { AssistenciaView } from './views/AssistenciaView';
 import { TerritoriosView } from './views/TerritoriosView';
+import { AvisosView } from './views/AvisosView';
+import { AdminPainelView } from './views/AdminPainelView';
 import { SecretarioView } from './views/SecretarioView';
 import { RelatoriosView } from './views/RelatoriosView';
 import { ConfiguracoesView } from './views/ConfiguracoesView';
@@ -62,24 +65,30 @@ export default function App() {
     switch (currentScreen) {
       case 'inicio':
         return <InicioView onNavigate={(screen) => setCurrentScreen(screen)} />;
+      case 'programacao':
+        return <ProgramacaoGeralView />;
       case 'designacoes':
         return <DesignacoesView />;
       case 'vida-e-ministerio':
         return <VidaEMinisterioView />;
-      case 'limpeza':
-        return <LimpezaView />;
-      case 'servico-de-campo':
-        return <ServicoDeCampoView />;
       case 'discurso-publico':
         return <DiscursoPublicoView />;
-      case 'assistencia':
-        return <AssistenciaView />;
+      case 'servico-de-campo':
+        return <ServicoDeCampoView />;
+      case 'limpeza':
+        return <LimpezaView />;
       case 'territorios':
         return <TerritoriosView />;
+      case 'avisos':
+        return <AvisosView />;
+      case 'administracao':
+        return <AdminPainelView onBackToPublic={() => setCurrentScreen('inicio')} />;
       case 'secretario':
         return <SecretarioView />;
       case 'relatorios':
         return <RelatoriosView />;
+      case 'assistencia':
+        return <AssistenciaView />;
       case 'configuracoes':
         return (
           <ConfiguracoesView
@@ -96,16 +105,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans antialiased">
-      {/* Header Fixo e Obrigatório */}
+      {/* Header Fixo do Quadro Digital */}
       <Header
         currentScreen={currentScreen}
         onOpenMobileMenu={() => setIsDrawerOpen(true)}
         isDark={theme === 'dark'}
         onToggleTheme={toggleTheme}
         isOnline={isOnline}
+        textSize={textSize}
+        onChangeTextSize={setTextSize}
+        onNavigateToAdmin={() => setCurrentScreen('administracao')}
       />
 
-      {/* Layout Principal com Sidebar (Tablet/PC) e Área de Trabalho */}
+      {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           currentScreen={currentScreen}

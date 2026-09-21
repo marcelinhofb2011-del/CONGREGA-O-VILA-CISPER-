@@ -137,7 +137,7 @@ export const AssistenciaView: React.FC = () => {
   // -------------------------------------------------------------
   const handleOpenLancamento = () => {
     setFormData({
-      data: formatDateBR(new Date()),
+      data: '',
       tipo: '',
       outroTipoEspecificacao: '',
       assistencia: '',
@@ -599,7 +599,7 @@ export const AssistenciaView: React.FC = () => {
 
           {registros.length === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-              Nenhum registro de assistência cadastrado até o momento.
+              Nenhum registro de assistência cadastrado.
             </div>
           ) : (
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">

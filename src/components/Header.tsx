@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Menu, Sun, Moon, WifiOff, Cloud, CloudOff } from 'lucide-react';
-import { ScreenId } from '../types';
+import { Menu, Sun, Moon, WifiOff, Cloud, CloudOff, Type, Lock } from 'lucide-react';
+import { ScreenId, TextSize } from '../types';
 import { firebaseSync, SyncStatus } from '../data/firebaseSyncService';
 
 interface HeaderProps {
@@ -9,13 +9,20 @@ interface HeaderProps {
   isDark: boolean;
   onToggleTheme: () => void;
   isOnline: boolean;
+  textSize: TextSize;
+  onChangeTextSize: (size: TextSize) => void;
+  onNavigateToAdmin: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  currentScreen,
   onOpenMobileMenu,
   isDark,
   onToggleTheme,
   isOnline,
+  textSize,
+  onChangeTextSize,
+  onNavigateToAdmin,
 }) => {
   const [firebaseStatus, setFirebaseStatus] = useState<SyncStatus>('connecting');
 
@@ -24,10 +31,17 @@ export const Header: React.FC<HeaderProps> = ({
       setFirebaseStatus(status);
     });
   }, []);
+
+  const cycleTextSize = () => {
+    if (textSize === 'sm') onChangeTextSize('md');
+    else if (textSize === 'md') onChangeTextSize('lg');
+    else onChangeTextSize('sm');
+  };
+
   return (
     <header
       id="app-header"
-      className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur-sm transition-colors dark:border-slate-800 dark:bg-slate-900/95 sm:px-6"
+      className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-3 sm:px-6 backdrop-blur-sm transition-colors dark:border-slate-800 dark:bg-slate-900/95"
     >
       <div className="flex items-center gap-3">
         {/* Mobile menu trigger */}
@@ -36,32 +50,33 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onOpenMobileMenu}
           aria-label="Abrir menu de navegação"
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800 lg:hidden"
+          className="flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 lg:hidden font-bold"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-5 w-5 text-amber-700 dark:text-amber-400 shrink-0" />
+          <span className="text-sm font-bold">Menu</span>
         </button>
-
-        {/* Mandatory Congregation Title */}
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <h1
-              id="congregation-name"
-              className="text-base font-bold tracking-tight text-slate-900 dark:text-white sm:text-lg"
-            >
-              CONGREGAÇÃO: VILA CISPER
-            </h1>
-          </div>
-          <span className="text-[11px] font-medium tracking-wide uppercase text-slate-500 dark:text-slate-400">
-            Sistema Interno de Atividades
-          </span>
-        </div>
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Controle rápido de Tamanho da Letra (Essencial para irmãos idosos) */}
+        <button
+          id="btn-toggle-text-size"
+          type="button"
+          onClick={cycleTextSize}
+          title={`Tamanho da letra: ${textSize === 'lg' ? 'Grande' : textSize === 'md' ? 'Médio' : 'Padrão'}. Clique para alterar.`}
+          className="flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <Type className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="hidden sm:inline">Letra:</span>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-bold uppercase dark:bg-slate-800">
+            {textSize === 'lg' ? 'G' : textSize === 'md' ? 'M' : 'P'}
+          </span>
+        </button>
+
         {/* Firebase Cloud Sync Indicator */}
         <div
           id="status-firebase-sync"
-          className={`hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors ${
+          className={`hidden md:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors ${
             firebaseStatus === 'connected'
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/80'
               : firebaseStatus === 'connecting'
@@ -116,10 +131,23 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onToggleTheme}
           aria-label={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
         >
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
+
+        {/* Acesso Discreto para Responsáveis */}
+        {currentScreen !== 'administracao' && (
+          <button
+            id="btn-header-admin-discreto"
+            type="button"
+            onClick={onNavigateToAdmin}
+            title="Acesso dos Irmãos Responsáveis"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-500 dark:hover:border-slate-400 dark:hover:text-slate-200 transition"
+          >
+            <Lock className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </header>
   );

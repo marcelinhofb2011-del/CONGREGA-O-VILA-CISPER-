@@ -70,6 +70,16 @@ export const DesignacoesView: React.FC = () => {
   useEffect(() => {
     setEscalas(getStoredEscalaDesignacoes());
     setIsAdmin(isAdminAuthenticated());
+
+    const handleFirebaseUpdate = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setEscalas(e.detail);
+      }
+    };
+    window.addEventListener('designacoes-firebase-updated', handleFirebaseUpdate);
+    return () => {
+      window.removeEventListener('designacoes-firebase-updated', handleFirebaseUpdate);
+    };
   }, []);
 
   // Lista única de meses disponíveis
@@ -363,10 +373,10 @@ export const DesignacoesView: React.FC = () => {
             <button
               onClick={() => setIsBulkModalOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
-              title="Importar ou exportar planilha em lote (Excel / CSV)"
+              title="Selecionar planilha (Excel / CSV) para importar programações"
             >
               <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Planilhas / Lote</span>
+              <span>Importar Planilha</span>
             </button>
           )}
 
@@ -439,14 +449,6 @@ export const DesignacoesView: React.FC = () => {
             >
               <Plus className="h-3.5 w-3.5" />
               <span>+ Nova Data/Escala</span>
-            </button>
-            <button
-              onClick={handleResetToOfficial}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              title="Restaurar a escala oficial completa de 2026"
-            >
-              <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
-              <span>Restaurar Modelo Oficial</span>
             </button>
           </div>
         </div>
@@ -590,7 +592,12 @@ export const DesignacoesView: React.FC = () => {
 
         {/* Tabelas por Mês */}
         <div className="divide-y divide-blue-200 dark:divide-slate-800">
-          {(Object.entries(escalasAgrupadas) as [string, EscalaDesignacaoItem[]][]).map(([mesTitulo, itensDoMes]) => (
+          {Object.keys(escalasAgrupadas).length === 0 ? (
+            <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+              <p className="text-sm font-semibold">Nenhuma programação cadastrada no momento.</p>
+            </div>
+          ) : (
+            (Object.entries(escalasAgrupadas) as [string, EscalaDesignacaoItem[]][]).map(([mesTitulo, itensDoMes]) => (
             <div key={mesTitulo} className="p-4 sm:p-5">
               {/* Barra do Mês */}
               <div className="mb-3 flex items-center justify-between rounded-lg bg-blue-100/80 px-4 py-2 dark:bg-blue-950/40">
@@ -724,58 +731,54 @@ export const DesignacoesView: React.FC = () => {
                 <span className="font-bold">Observação Oficial:</span> Os indicadores deverão cuidar do lado interno e externo do Salão do Reino, ventilação, reposição do material nos banheiros e copos de água.
               </div>
             </div>
-          ))}
+          )))}
         </div>
 
         {/* ========================================================================= */}
         {/* QUADRO DE RESUMO DE VOLUNTÁRIOS (ROSTER COM TOTAL DE CADA IRMÃO)           */}
         {/* ========================================================================= */}
-        <div className="border-t-2 border-blue-300 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/80 sm:p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-700 dark:text-blue-400" />
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                Resumo de Voluntários e Designações Atribuídas
-              </h4>
+        {estatisticasVoluntarios.length > 0 && (
+          <div className="border-t-2 border-blue-300 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/80 sm:p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-700 dark:text-blue-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Resumo de Voluntários e Designações Atribuídas
+                </h4>
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Total de voluntários ativos: {estatisticasVoluntarios.length}
+              </span>
             </div>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              Total de voluntários ativos: {estatisticasVoluntarios.length}
-            </span>
-          </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                  <th className="p-2">VOLUNTÁRIOS</th>
-                  <th className="p-2 text-center">INDICADOR</th>
-                  <th className="p-2 text-center">VOLANTE</th>
-                  <th className="p-2 text-center">ÁUDIO</th>
-                  <th className="p-2 text-center">VÍDEO</th>
-                  <th className="p-2 text-center font-black text-blue-700 dark:text-blue-400">TOTAL</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {estatisticasVoluntarios.map((vol) => {
-                  const ehSelecionado = irmaoSelecionado && verificarDesignacaoNome(irmaoSelecionado, vol.nome);
-                  return (
-                    <tr
-                      key={vol.nome}
-                      className={ehSelecionado ? 'bg-amber-100 font-bold text-amber-950 dark:bg-amber-950/40 dark:text-amber-100' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}
-                    >
-                      <td className="p-2 font-medium">{vol.nome}</td>
-                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.indicador || '—'}</td>
-                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.volante || '—'}</td>
-                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.audio || '—'}</td>
-                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.video || '—'}</td>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                    <th className="p-2">VOLUNTÁRIOS</th>
+                    <th className="p-2 text-center">INDICADOR</th>
+                    <th className="p-2 text-center">VOLANTE</th>
+                    <th className="p-2 text-center">ÁUDIO</th>
+                    <th className="p-2 text-center">VÍDEO</th>
+                    <th className="p-2 text-center font-black text-blue-700 dark:text-blue-400">TOTAL</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {estatisticasVoluntarios.map((vol) => (
+                    <tr key={vol.nome} className="hover:bg-blue-50/50 dark:hover:bg-slate-800/50">
+                      <td className="p-2 font-medium text-slate-900 dark:text-white">{vol.nome}</td>
+                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.indicador}</td>
+                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.volante}</td>
+                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.audio}</td>
+                      <td className="p-2 text-center text-slate-600 dark:text-slate-400">{vol.video}</td>
                       <td className="p-2 text-center font-bold text-blue-700 dark:text-blue-400">{vol.total}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ========================================================================= */}

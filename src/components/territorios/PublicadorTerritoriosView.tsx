@@ -330,18 +330,20 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
       {/* ------------------------------------------------------------- */}
       {/* SEÇÃO 2: MEU TERRITÓRIO */}
       {/* ------------------------------------------------------------- */}
-      {meusTerritorios.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Map className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              MEU TERRITÓRIO
-            </h3>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Map className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            MEU TERRITÓRIO
+          </h3>
+          {activePublicador && (
             <span className="text-xs text-slate-500 dark:text-slate-400">
               Designado para: <strong>{activePublicador}</strong>
             </span>
-          </div>
+          )}
+        </div>
 
+        {meusTerritorios.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-1">
             {meusTerritorios.map((ter) => {
               // Checar se há transferência pendente para este território
@@ -478,8 +480,12 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
               );
             })}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            Nenhum território atribuído no momento.
+          </div>
+        )}
+      </div>
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL: CONCLUIR TERRITÓRIO */}

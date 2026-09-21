@@ -1,7 +1,8 @@
+import * as XLSX from 'xlsx';
+
 /**
- * Utilitários para Importação e Exportação de Planilhas (Excel / CSV / Google Sheets)
- * Suporta copiar & colar direto (TSV), arquivos CSV delimitados por vírgula ou ponto-e-vírgula,
- * e download com BOM UTF-8 para compatibilidade perfeita com o Microsoft Excel.
+ * Utilitários para Importação de Planilhas (Excel / CSV / Google Sheets)
+ * Suporta leitura direta de arquivos .xlsx, .xls, .csv, .tsv e copiar & colar do Excel/Sheets.
  */
 
 export interface ParsedRowResult<T> {
@@ -9,6 +10,65 @@ export interface ParsedRowResult<T> {
   raw: string[];
   isValid: boolean;
   warnings: string[];
+}
+
+/**
+ * Lê diretamente um arquivo de planilha (Excel .xlsx, .xls ou arquivo de texto .csv, .tsv)
+ * Suporta múltiplas abas/planilhas do Excel de uma só vez.
+ */
+export async function readSpreadsheetFile(file: File): Promise<string[][]> {
+  const fileName = file.name.toLowerCase();
+  const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
+  if (isExcel) {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {
+      type: 'array',
+      cellDates: true,
+      dateNF: 'dd/mm/yyyy',
+    });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) return [];
+
+    const todasLinhas: string[][] = [];
+
+    // Se tiver mais de uma aba no arquivo Excel
+    for (const sheetName of workbook.SheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+
+      const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, {
+        header: 1,
+        defval: '',
+        raw: false,
+        dateNF: 'dd/mm/yyyy',
+      });
+
+      const cleanRows = rawRows
+        .map((r) =>
+          Array.isArray(r)
+            ? r.map((c) => (c !== null && c !== undefined ? String(c).trim() : ''))
+            : []
+        )
+        .filter((r) => r.some((c) => c.length > 0));
+
+      if (cleanRows.length === 0) continue;
+
+      // Se houver múltiplas abas e o nome da aba for um mês (ex: "Janeiro", "Fevereiro", "Fev"),
+      // insere uma linha indicadora do mês da aba para guiar o leitor
+      const mesAba = detectarMes(sheetName, '');
+      if (workbook.SheetNames.length > 1 && mesAba) {
+        todasLinhas.push([mesAba]);
+      }
+
+      todasLinhas.push(...cleanRows);
+    }
+
+    return todasLinhas;
+  } else {
+    const text = await file.text();
+    return parseDelimitedText(text);
+  }
 }
 
 /**
@@ -110,14 +170,148 @@ export function downloadBrowserFile(content: string, filename: string, mimeType 
 }
 
 /**
- * Gera nomes e chaves de meses em português
+ * Nomes e chaves de meses em português
  */
+export const LISTA_MESES_PADRAO = [
+  'Janeiro 2026',
+  'Fevereiro 2026',
+  'Março 2026',
+  'Abril 2026',
+  'Maio 2026',
+  'Junho 2026',
+  'Julho 2026',
+  'Agosto 2026',
+  'Setembro 2026',
+  'Outubro 2026',
+  'Novembro 2026',
+  'Dezembro 2026',
+];
+
+export const MESES_NOMES_BASE = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
 export function normalizarMesChave(mes: string): string {
   return mes
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z]/g, '');
+}
+
+/**
+ * Extrai dia, mês (1-12), ano e texto formatado a partir de células com data
+ * Exemplos aceitos: "04/01", "07/01/2026", "24/01/26", "4/1", "2026-01-04"
+ */
+export function extrairInfoData(texto: string): { dia: number; mes: number; ano?: number; textoFormatado: string } | null {
+  if (!texto || !texto.trim()) return null;
+  const t = texto.trim();
+
+  // Formato brasileiro: DD/MM/YYYY ou DD/MM/YY ou DD/MM
+  const matchBR = t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (matchBR) {
+    const d = parseInt(matchBR[1], 10);
+    const m = parseInt(matchBR[2], 10);
+    let a: number | undefined;
+    if (matchBR[3]) {
+      a = parseInt(matchBR[3], 10);
+      if (a < 100) a += 2000;
+    }
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
+      return {
+        dia: d,
+        mes: m,
+        ano: a,
+        textoFormatado: `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}${a ? `/${a}` : ''}`,
+      };
+    }
+  }
+
+  // Formato ISO: YYYY-MM-DD
+  const matchISO = t.match(/\b(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\b/);
+  if (matchISO) {
+    const a = parseInt(matchISO[1], 10);
+    const m = parseInt(matchISO[2], 10);
+    const d = parseInt(matchISO[3], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
+      return {
+        dia: d,
+        mes: m,
+        ano: a,
+        textoFormatado: `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${a}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Verifica se um texto é um dia da semana (ex: Domingo, Quarta-Feira, Sábado, etc.)
+ */
+export function ehDiaSemana(texto: string): boolean {
+  if (!texto || !texto.trim()) return false;
+  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return (
+    t.startsWith('domingo') ||
+    t.startsWith('segunda') ||
+    t.startsWith('terca') ||
+    t.startsWith('quarta') ||
+    t.startsWith('quinta') ||
+    t.startsWith('sexta') ||
+    t.startsWith('sabado') ||
+    t === 'dom' ||
+    t === 'seg' ||
+    t === 'ter' ||
+    t === 'qua' ||
+    t === 'qui' ||
+    t === 'sex' ||
+    t === 'sab'
+  );
+}
+
+/**
+ * Detecta o nome do mês a partir do texto de coluna de mês ou da data
+ */
+export function detectarMes(texto: string, fallback = 'Janeiro 2026'): string {
+  if (!texto || !texto.trim()) return fallback;
+  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const anoMatch = texto.match(/\b(202\d)\b/);
+  const ano = anoMatch ? anoMatch[1] : '2026';
+
+  if (t.includes('janeiro') || t.includes('jan/') || t.startsWith('jan')) return `Janeiro ${ano}`;
+  if (t.includes('fevereiro') || t.includes('fev/') || t.startsWith('fev')) return `Fevereiro ${ano}`;
+  if (t.includes('marco') || t.includes('mar/') || t.startsWith('mar')) return `Março ${ano}`;
+  if (t.includes('abril') || t.includes('abr/') || t.startsWith('abr')) return `Abril ${ano}`;
+  if (t.includes('maio') || t.includes('mai/') || t.startsWith('mai')) return `Maio ${ano}`;
+  if (t.includes('junho') || t.includes('jun/') || t.startsWith('jun')) return `Junho ${ano}`;
+  if (t.includes('julho') || t.includes('jul/') || t.startsWith('jul')) return `Julho ${ano}`;
+  if (t.includes('agosto') || t.includes('ago/') || t.startsWith('ago')) return `Agosto ${ano}`;
+  if (t.includes('setembro') || t.includes('set/') || t.startsWith('set')) return `Setembro ${ano}`;
+  if (t.includes('outubro') || t.includes('out/') || t.startsWith('out')) return `Outubro ${ano}`;
+  if (t.includes('novembro') || t.includes('nov/') || t.startsWith('nov')) return `Novembro ${ano}`;
+  if (t.includes('dezembro') || t.includes('dez/') || t.startsWith('dez')) return `Dezembro ${ano}`;
+
+  // Se tiver formato de data como 04/01, 15/02/2026, 04/08
+  const infoData = extrairInfoData(texto);
+  if (infoData && infoData.mes >= 1 && infoData.mes <= 12) {
+    const anoFinal = infoData.ano ? String(infoData.ano) : ano;
+    return `${MESES_NOMES_BASE[infoData.mes - 1]} ${anoFinal}`;
+  }
+
+  return fallback;
 }
 
 /**

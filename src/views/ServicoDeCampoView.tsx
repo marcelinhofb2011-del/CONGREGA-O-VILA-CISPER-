@@ -1,851 +1,726 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  CampoDiaSemanaItem,
-  CampoFimDeSemanaItem,
-  DIAS_SEMANA_CAMPO_CANONICO,
-  getStoredCampoFds,
-  saveStoredCampoFdsItem,
-  deleteStoredCampoFdsItem,
-  resetCampoToSample,
+  Calendar,
+  Clock,
+  MapPin,
+  User,
+  Plus,
+  Edit2,
+  Trash2,
+  Lock,
+  Unlock,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+import {
+  CampoProgramacao,
+  getStoredCampoProgramacao,
+  saveStoredCampoProgramacao,
+  deleteStoredCampoProgramacao,
 } from '../data/campoStorage';
 import {
   isAdminAuthenticated,
   setAdminAuthenticated,
   verifyAdminPassword,
 } from '../data/territoriosStorage';
-import {
-  Compass,
-  Lock,
-  Unlock,
-  Plus,
-  Printer,
-  Calendar,
-  RotateCcw,
-  ShieldCheck,
-  Eye,
-  EyeOff,
-  X,
-  User,
-  Clock,
-  MapPin,
-  CheckCircle2,
-  Edit2,
-  Trash2,
-  Info,
-  FileSpreadsheet,
-} from 'lucide-react';
-import { BulkImportExportModal } from '../components/BulkImportExportModal';
+
+// Função auxiliar para interpretar a data e permitir ordenação cronológica correta
+const parseDataCampo = (s: string): Date | null => {
+  if (!s) return null;
+  const limpo = s.trim();
+
+  // Formato DD/MM/YYYY
+  const matchComAno = limpo.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (matchComAno) {
+    const [, d, m, y] = matchComAno;
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+
+  // Formato DD/MM (assume ano corrente)
+  const matchSemAno = limpo.match(/(\d{1,2})\/(\d{1,2})/);
+  if (matchSemAno) {
+    const [, d, m] = matchSemAno;
+    const ano = new Date().getFullYear();
+    return new Date(ano, Number(m) - 1, Number(d));
+  }
+
+  const d = new Date(limpo);
+  return isNaN(d.getTime()) ? null : d;
+};
 
 export const ServicoDeCampoView: React.FC = () => {
-  const [campoFds, setCampoFds] = useState<CampoFimDeSemanaItem[]>([]);
-  const [diasSemana] = useState<CampoDiaSemanaItem[]>(DIAS_SEMANA_CAMPO_CANONICO);
+  const [programacoes, setProgramacoes] = useState<CampoProgramacao[]>([]);
+  const [isAdmin, setIsAdmin] = useState<boolean>(isAdminAuthenticated());
 
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
-  const [passwordInput, setPasswordInput] = useState<string>('');
-  const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string>('');
+  // Modais
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
 
-  // Filtros
-  const [irmaoSelecionado, setIrmaoSelecionado] = useState<string>('');
-  const [mesFiltro, setMesFiltro] = useState<string>('todos');
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [itemParaEditar, setItemParaEditar] = useState<CampoProgramacao | null>(null);
+  const [itemParaExcluir, setItemParaExcluir] = useState<CampoProgramacao | null>(null);
 
-  // Modal de edição / criação
-  const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
-  const [itemParaEditar, setItemParaEditar] = useState<CampoFimDeSemanaItem | null>(null);
-
-  // Formulário
-  const [formData, setFormData] = useState<{
-    mes: string;
-    data: string;
-    diaSemana: 'Sábado' | 'Domingo';
-    dirigente: string;
-    observacao: string;
-    ehEspecial: boolean;
-  }>({
-    mes: 'Janeiro',
+  // Formulário: Data, Horário, Ponto de encontro, Irmão responsável
+  const [formData, setFormData] = useState({
     data: '',
-    diaSemana: 'Sábado',
-    dirigente: '',
-    observacao: '',
-    ehEspecial: false,
+    horario: '',
+    pontoEncontro: '',
+    responsavel: '',
   });
 
-  const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<{
+    tipo: 'sucesso' | 'erro';
+    texto: string;
+  } | null>(null);
+
+  // Carregamento inicial e listeners de atualização em tempo real
+  const carregarDados = () => {
+    setProgramacoes(getStoredCampoProgramacao());
+    setIsAdmin(isAdminAuthenticated());
+  };
 
   useEffect(() => {
-    setCampoFds(getStoredCampoFds());
-    setIsAdmin(isAdminAuthenticated());
+    carregarDados();
+
+    const handleFirebaseUpdate = () => {
+      carregarDados();
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === 'vila_cisper_campo_programacao_2026' ||
+        e.key === 'vila_cisper_admin_auth'
+      ) {
+        carregarDados();
+      }
+    };
+
+    window.addEventListener('campo-programacao-firebase-updated', handleFirebaseUpdate);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('campo-programacao-firebase-updated', handleFirebaseUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
-  // Meses únicos
-  const mesesDisponiveis = useMemo(() => {
-    const map = new Map<string, string>();
-    campoFds.forEach((item) => {
-      if (!map.has(item.mesChave)) {
-        map.set(item.mesChave, item.mes);
+  // Ordenação cronológica das programações
+  const programacoesOrdenadas = useMemo(() => {
+    return [...programacoes].sort((a, b) => {
+      const dtA = parseDataCampo(a.data);
+      const dtB = parseDataCampo(b.data);
+      if (dtA && dtB) {
+        return dtA.getTime() - dtB.getTime();
       }
+      if (dtA) return -1;
+      if (dtB) return 1;
+      return a.data.localeCompare(b.data);
     });
-    return Array.from(map.entries()).map(([chave, rotulo]) => ({ chave, rotulo }));
-  }, [campoFds]);
+  }, [programacoes]);
 
-  // Lista de todos os irmãos dirigentes
-  const todosDirigentes = useMemo(() => {
-    const nomes = new Set<string>();
-    const extrair = (str?: string) => {
-      if (!str) return;
-      if (
-        str.toLowerCase().includes('assembléia') ||
-        str.toLowerCase().includes('congresso') ||
-        str.toLowerCase().includes('superintendente do grupo') ||
-        str.toLowerCase().includes('viajante')
-      ) {
-        return;
-      }
-      // Pega o nome principal (antes do parênteses)
-      const nomeBase = str.split('(')[0].trim();
-      nomeBase.split(/[/,eE+&]/).forEach((part) => {
-        const limpo = part.trim();
-        if (limpo.length > 2) nomes.add(limpo);
-      });
-    };
+  // Mostrar primeiro as próximas programações
+  const { proximaProgramacao, programacoesFuturas, programacoesAnteriores } = useMemo(() => {
+    if (programacoesOrdenadas.length === 0) {
+      return {
+        proximaProgramacao: null,
+        programacoesFuturas: [],
+        programacoesAnteriores: [],
+      };
+    }
 
-    campoFds.forEach((c) => extrair(c.dirigente));
-    diasSemana.forEach((d) => extrair(d.dirigente));
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
 
-    return Array.from(nomes).sort((a, b) => a.localeCompare(b));
-  }, [campoFds, diasSemana]);
-
-  // Helper de checagem de nome
-  const verificarIrmao = (nomeBuscado: string, texto?: string): boolean => {
-    if (!nomeBuscado || !texto) return false;
-    const n = nomeBuscado.trim().toLowerCase();
-    const t = texto.trim().toLowerCase();
-    return t.includes(n);
-  };
-
-  // Resumo do irmão selecionado
-  const resumoIrmao = useMemo(() => {
-    if (!irmaoSelecionado) return null;
-    let countFds = 0;
-    let countSemana = 0;
-    const datas: string[] = [];
-
-    campoFds.forEach((c) => {
-      if (verificarIrmao(irmaoSelecionado, c.dirigente)) {
-        countFds++;
-        datas.push(`${c.data} (${c.diaSemana} - ${c.mes})`);
-      }
+    // Encontra o índice da primeira programação com data >= hoje
+    let proximoIndex = programacoesOrdenadas.findIndex((item) => {
+      const dt = parseDataCampo(item.data);
+      if (!dt) return false;
+      return dt.getTime() >= hoje.getTime();
     });
 
-    diasSemana.forEach((d) => {
-      if (verificarIrmao(irmaoSelecionado, d.dirigente)) {
-        countSemana++;
-      }
-    });
+    // Se nenhuma tiver data >= hoje (por exemplo, todas já passaram), seleciona a primeira da lista
+    if (proximoIndex === -1) {
+      proximoIndex = 0;
+    }
+
+    const proxima = programacoesOrdenadas[proximoIndex];
+    const futuras = programacoesOrdenadas.filter((_, idx) => idx > proximoIndex);
+    const anteriores = programacoesOrdenadas.filter((_, idx) => idx < proximoIndex);
 
     return {
-      total: countFds + countSemana,
-      countFds,
-      countSemana,
-      datas,
+      proximaProgramacao: proxima,
+      programacoesFuturas: futuras,
+      programacoesAnteriores: anteriores,
     };
-  }, [irmaoSelecionado, campoFds, diasSemana]);
+  }, [programacoesOrdenadas]);
 
-  // Agrupamento por mês
-  const campoAgrupadoPorMes = useMemo(() => {
-    const grupos: { [mes: string]: CampoFimDeSemanaItem[] } = {};
-    campoFds.forEach((item) => {
-      if (mesFiltro !== 'todos' && item.mesChave !== mesFiltro) return;
-      if (!grupos[item.mes]) grupos[item.mes] = [];
-      grupos[item.mes].push(item);
-    });
-    return grupos;
-  }, [campoFds, mesFiltro]);
-
-  // Autenticação
-  const handleOpenAuth = () => {
-    setPasswordInput('');
-    setAuthError('');
-    setShowAuthModal(true);
-  };
-
-  const handleLogin = (e: React.FormEvent) => {
+  // Handlers de Autenticação do Responsável
+  const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (verifyAdminPassword(passwordInput)) {
       setAdminAuthenticated(true);
       setIsAdmin(true);
-      setShowAuthModal(false);
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Acesso do responsável pelo serviço de campo concedido.' });
-      setTimeout(() => setFeedbackMsg(null), 4000);
+      setIsAuthModalOpen(false);
+      setPasswordInput('');
+      setAuthError('');
+      setFeedbackMsg({ tipo: 'sucesso', texto: 'Acesso de responsável concedido.' });
+      setTimeout(() => setFeedbackMsg(null), 3000);
     } else {
-      setAuthError('Senha incorreta.');
+      setAuthError('Senha incorreta. Tente novamente.');
     }
   };
 
   const handleLogout = () => {
     setAdminAuthenticated(false);
     setIsAdmin(false);
-    setFeedbackMsg({ tipo: 'sucesso', texto: 'Modo de gestão finalizado.' });
-    setTimeout(() => setFeedbackMsg(null), 3000);
+    setFeedbackMsg({ tipo: 'sucesso', texto: 'Modo responsável desativado.' });
+    setTimeout(() => setFeedbackMsg(null), 2500);
   };
 
-  // Ações de edição
-  const handleOpenCreate = () => {
+  // Handlers do Formulário de Programação
+  const handleOpenNovo = () => {
     setItemParaEditar(null);
     setFormData({
-      mes: mesFiltro !== 'todos' ? (mesesDisponiveis.find((m) => m.chave === mesFiltro)?.rotulo || 'Janeiro') : 'Janeiro',
       data: '',
-      diaSemana: 'Sábado',
-      dirigente: '',
-      observacao: '',
-      ehEspecial: false,
+      horario: '09:00',
+      pontoEncontro: 'Salão do Reino',
+      responsavel: '',
     });
     setIsEditorOpen(true);
   };
 
-  const handleOpenEdit = (item: CampoFimDeSemanaItem) => {
+  const handleOpenEditar = (item: CampoProgramacao) => {
     setItemParaEditar(item);
     setFormData({
-      mes: item.mes,
       data: item.data,
-      diaSemana: item.diaSemana,
-      dirigente: item.dirigente,
-      observacao: item.observacao || '',
-      ehEspecial: !!item.ehEspecial,
+      horario: item.horario,
+      pontoEncontro: item.pontoEncontro,
+      responsavel: item.responsavel,
     });
     setIsEditorOpen(true);
   };
 
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.data.trim() || !formData.dirigente.trim()) {
-      alert('Informe a Data e o Dirigente.');
+    if (!formData.data.trim()) {
+      setFeedbackMsg({ tipo: 'erro', texto: 'Informe a data da programação.' });
       return;
     }
 
-    const mesChave = formData.mes.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const item: CampoFimDeSemanaItem = {
-      id: itemParaEditar ? itemParaEditar.id : `c-${Date.now()}`,
-      mes: formData.mes,
-      mesChave,
+    const item: CampoProgramacao = {
+      id: itemParaEditar ? itemParaEditar.id : `prog-campo-${Date.now()}`,
       data: formData.data.trim(),
-      diaSemana: formData.diaSemana,
-      dirigente: formData.dirigente.trim(),
-      observacao: formData.observacao.trim(),
-      ehEspecial: formData.ehEspecial,
+      horario: formData.horario.trim() || '09:00',
+      pontoEncontro: formData.pontoEncontro.trim() || 'Salão do Reino',
+      responsavel: formData.responsavel.trim(),
     };
 
-    const res = saveStoredCampoFdsItem(item);
+    const res = saveStoredCampoProgramacao(item);
     if (res.success && res.data) {
-      setCampoFds(res.data);
+      setProgramacoes(res.data);
       setIsEditorOpen(false);
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala de campo salva com sucesso!' });
+      setFeedbackMsg({
+        tipo: 'sucesso',
+        texto: itemParaEditar
+          ? 'Programação de campo atualizada com sucesso!'
+          : 'Programação de campo cadastrada com sucesso!',
+      });
       setTimeout(() => setFeedbackMsg(null), 3500);
+    } else {
+      setFeedbackMsg({
+        tipo: 'erro',
+        texto: res.error || 'Erro ao salvar a programação.',
+      });
     }
   };
 
-  const handleDeleteItem = (id: string, data: string) => {
-    if (window.confirm(`Deseja realmente remover a escala de campo da data "${data}"?`)) {
-      const res = deleteStoredCampoFdsItem(id);
-      if (res.success && res.data) {
-        setCampoFds(res.data);
-        setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala removida.' });
-        setTimeout(() => setFeedbackMsg(null), 3000);
-      }
-    }
-  };
-
-  const handleResetToOfficial = () => {
-    if (window.confirm('Deseja restaurar a escala oficial completa de Dirigentes de Campo 2026?')) {
-      const canonico = resetCampoToSample();
-      setCampoFds(canonico);
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala oficial de Dirigentes de Campo restaurada!' });
+  const handleConfirmExcluir = () => {
+    if (!itemParaExcluir) return;
+    const res = deleteStoredCampoProgramacao(itemParaExcluir.id);
+    if (res.success && res.data) {
+      setProgramacoes(res.data);
+      setItemParaExcluir(null);
+      setFeedbackMsg({ tipo: 'sucesso', texto: 'Programação excluída com sucesso!' });
       setTimeout(() => setFeedbackMsg(null), 3500);
+    } else {
+      setFeedbackMsg({
+        tipo: 'erro',
+        texto: res.error || 'Erro ao excluir a programação.',
+      });
     }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleBulkSuccess = (qtd: number, modo: string) => {
-    setCampoFds(getStoredCampoFds());
-    const modoTexto =
-      modo === 'append'
-        ? 'adicionados às existentes'
-        : modo === 'replace_month'
-        ? 'substituindo o mês selecionado'
-        : 'substituição completa da escala';
-    setFeedbackMsg({
-      tipo: 'sucesso',
-      texto: `Importação em lote de campo concluída com sucesso! ${qtd} datas processadas (${modoTexto}).`,
-    });
-    setTimeout(() => setFeedbackMsg(null), 4000);
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Barra Superior de Identificação e Modos */}
-      <header className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900 print:hidden">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Congregação Vila Cisper (67744)
+    <div className="mx-auto w-full max-w-3xl space-y-8 pb-16 pt-2">
+      {/* ------------------------------------------------------------- */}
+      {/* CABEÇALHO DO MÓDULO                                           */}
+      {/* ------------------------------------------------------------- */}
+      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-sky-700 dark:text-sky-400">
+              Congregação: Vila Cisper
             </span>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Escala Oficial 2026
-            </span>
+            <h1 className="mt-1 text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+              SERVIÇO DE CAMPO
+            </h1>
           </div>
-          <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-            Serviço de Campo • Dirigentes 2026
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-            Programação oficial de saídas para o ministério de campo durante a semana, sábados e domingos.
-          </p>
-        </div>
 
-        {/* Controles de Acesso e Impressão */}
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
-            <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50"
-              title="Importar ou exportar planilha em lote (Excel / CSV)"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-              <span>Planilhas / Lote</span>
-            </button>
-          )}
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            title="Imprimir escala ou gerar PDF"
-          >
-            <Printer className="h-4 w-4" />
-            <span>Imprimir / PDF</span>
-          </button>
-
-          {isAdmin ? (
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                <Unlock className="h-4 w-4 text-emerald-600" />
-                <span className="hidden sm:inline">Modo Gestão:</span> Responsável Ativo
-              </span>
+          {/* Área de Autenticação / Controles do Responsável */}
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-cadastrar-campo"
+                  onClick={handleOpenNovo}
+                  className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-xs hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Cadastrar Programação</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-sair-responsavel-campo"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                  title="Sair do modo responsável"
+                >
+                  <Unlock className="h-3.5 w-3.5 text-green-600" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={handleLogout}
-                className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                title="Sair do modo de gestão"
+                type="button"
+                id="btn-login-responsavel-campo"
+                onClick={() => {
+                  setPasswordInput('');
+                  setAuthError('');
+                  setIsAuthModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 transition-colors"
               >
-                Sair
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleOpenAuth}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:bg-sky-600 dark:hover:bg-sky-700"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              <span>Acesso do Responsável</span>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Feedback Mensagem */}
-      {feedbackMsg && (
-        <div
-          className={`flex items-center justify-between rounded-lg p-3 text-sm print:hidden ${
-            feedbackMsg.tipo === 'sucesso'
-              ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
-              : 'border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-            <span>{feedbackMsg.texto}</span>
-          </div>
-          <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-slate-600">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Barra de Ações Administrativas (Responsável) */}
-      {isAdmin && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-dashed border-sky-300 bg-sky-50/60 p-3.5 dark:border-sky-800 dark:bg-sky-950/20 print:hidden">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-sky-600 dark:text-sky-400" />
-            <span className="text-xs font-semibold text-sky-900 dark:text-sky-200">
-              Painel do Responsável pelo Serviço de Campo
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-800 shadow-xs hover:bg-sky-50 dark:border-sky-800 dark:bg-slate-800 dark:text-sky-300"
-              title="Importar planilhas em lote do Excel ou Google Sheets"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-sky-600" />
-              <span>Importar / Exportar Planilha</span>
-            </button>
-            <button
-              onClick={handleOpenCreate}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-sky-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>+ Novo Dirigente / Data</span>
-            </button>
-            <button
-              onClick={handleResetToOfficial}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              title="Restaurar escala oficial de 2026"
-            >
-              <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
-              <span>Restaurar Modelo Oficial</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Barra de Filtros e Consulta de Irmão */}
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm md:grid-cols-12 dark:border-slate-800 dark:bg-slate-900 print:hidden">
-        {/* Seletor "Consultar Minhas Designações" */}
-        <div className="md:col-span-6 lg:col-span-7">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-            <User className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-            <span>Consultar / Destacar Minhas Datas:</span>
-          </label>
-          <div className="flex items-center gap-2">
-            <select
-              value={irmaoSelecionado}
-              onChange={(e) => setIrmaoSelecionado(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="">-- Selecione seu nome para realçar suas datas --</option>
-              {todosDirigentes.map((nome) => (
-                <option key={nome} value={nome}>
-                  {nome}
-                </option>
-              ))}
-            </select>
-            {irmaoSelecionado && (
-              <button
-                onClick={() => setIrmaoSelecionado('')}
-                className="rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                title="Limpar seleção"
-              >
-                Limpar
+                <Lock className="h-3.5 w-3.5" />
+                <span>Responsável</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Seletor de Mês */}
-        <div className="md:col-span-6 lg:col-span-5">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-            <Calendar className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-            <span>Visualizar Mês:</span>
-          </label>
-          <select
-            value={mesFiltro}
-            onChange={(e) => setMesFiltro(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+        {/* Feedback Alert */}
+        {feedbackMsg && (
+          <div
+            className={`mt-4 flex items-center justify-between rounded-xl p-3.5 text-sm font-bold ${
+              feedbackMsg.tipo === 'sucesso'
+                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+            }`}
           >
-            <option value="todos">Todos os Meses (Ano Completo 2026)</option>
-            {mesesDisponiveis.map((m) => (
-              <option key={m.chave} value={m.chave}>
-                {m.rotulo}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Card de Resumo do Irmão */}
-      {resumoIrmao && (
-        <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-blue-50/40 p-4 shadow-sm dark:border-sky-900/60 dark:from-sky-950/30 dark:to-blue-950/20 print:hidden">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow">
-                <Compass className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-sky-950 dark:text-sky-200">
-                  {irmaoSelecionado}
-                </h2>
-                <p className="text-xs text-sky-800/80 dark:text-sky-300/80">
-                  Você está escalado em <span className="font-bold text-sky-700 dark:text-sky-300">{resumoIrmao.total} ocasiões</span> como dirigente de campo em 2026.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-md border border-sky-200 bg-white px-2.5 py-1 font-semibold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-slate-900 dark:text-sky-300">
-                Finais de Semana: {resumoIrmao.countFds}
-              </span>
-              {resumoIrmao.countSemana > 0 && (
-                <span className="rounded-md border border-sky-200 bg-white px-2.5 py-1 font-semibold text-sky-800 shadow-sm dark:border-sky-800 dark:bg-slate-900 dark:text-sky-300">
-                  Dias de Semana: Fixo
-                </span>
+            <div className="flex items-center gap-2">
+              {feedbackMsg.tipo === 'sucesso' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
               )}
+              <span>{feedbackMsg.texto}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => setFeedbackMsg(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        </div>
-      )}
+        )}
+      </header>
 
-      {/* ========================================================================= */}
-      {/* DOCUMENTO OFICIAL: QUADRO DIRIGENTES CAMPO 2026 (IDÊNTICO AO MODELO PDF)  */}
-      {/* ========================================================================= */}
-      <div className="overflow-hidden rounded-xl border-2 border-sky-600 bg-white shadow-md dark:border-sky-700 dark:bg-slate-900 print:border-none print:shadow-none">
-        {/* Banner do Cabeçalho Oficial */}
-        <div className="border-b-2 border-sky-700 bg-gradient-to-r from-sky-700 via-sky-600 to-sky-800 p-4 text-white sm:p-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/30 bg-white/10 text-white shadow-inner">
-                <Compass className="h-6 w-6" />
+      {/* ------------------------------------------------------------- */}
+      {/* CORPO PRINCIPAL - VISUALIZAÇÃO PÚBLICA                        */}
+      {/* ------------------------------------------------------------- */}
+      {programacoes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-800">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Nenhuma programação cadastrada no momento.
+          </p>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenNovo}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2 text-xs font-bold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-700"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Cadastrar Primeira Programação</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {/* 1. PRÓXIMA PROGRAMAÇÃO EM DESTAQUE */}
+          {proximaProgramacao && (
+            <section
+              id="card-proxima-programacao-campo"
+              className="rounded-2xl border-2 border-sky-600 bg-sky-50/40 p-6 shadow-sm dark:border-sky-500 dark:bg-sky-950/20"
+            >
+              <div className="flex items-center justify-between border-b border-sky-200/80 pb-3 dark:border-sky-900/60">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-sky-700 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white dark:bg-sky-600">
+                    Próxima Saída
+                  </span>
+                </div>
+
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditar(proximaProgramacao)}
+                      className="rounded-lg border border-slate-300 bg-white p-2 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 transition-colors"
+                      title="Editar programação"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setItemParaExcluir(proximaProgramacao)}
+                      className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 transition-colors"
+                      title="Excluir programação"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-200">
-                  Congregação Vila Cisper • Ano 2026
-                </span>
-                <h2 className="text-xl font-black tracking-wide uppercase sm:text-2xl">
-                  DIRIGENTES CAMPO
-                </h2>
+
+              <div className="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
+                {/* Data */}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Data:
+                    </span>
+                    <span className="text-lg font-black text-slate-900 dark:text-white">
+                      {proximaProgramacao.data}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Horário */}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Horário:
+                    </span>
+                    <span className="text-lg font-black text-slate-900 dark:text-white">
+                      {proximaProgramacao.horario}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ponto de encontro */}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                    <MapPin className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Ponto de encontro:
+                    </span>
+                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                      {proximaProgramacao.pontoEncontro}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Responsável */}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Responsável:
+                    </span>
+                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                      {proximaProgramacao.responsavel || '—'}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="text-right">
-              <span className="inline-block rounded-md border border-white/20 bg-sky-900/50 px-3 py-1 text-sm font-bold uppercase tracking-widest text-sky-100">
-                2026
+            </section>
+          )}
+
+          {/* 2. PROGRAMAÇÕES FUTURAS */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2 dark:border-slate-800">
+              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                Programações Futuras
+              </h2>
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                {programacoesFuturas.length}{' '}
+                {programacoesFuturas.length === 1
+                  ? 'saída programada'
+                  : 'saídas programadas'}
               </span>
             </div>
-          </div>
-        </div>
 
-        {/* ========================================================================= */}
-        {/* SEÇÃO 1: DIAS DA SEMANA (TABELA OFICIAL DO PDF)                           */}
-        {/* ========================================================================= */}
-        <div className="border-b border-sky-200 p-4 dark:border-slate-800 sm:p-5">
-          <div className="mb-2.5 flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-              DIAS DA SEMANA
-            </h3>
-            <span className="text-[11px] text-slate-500">Horários e Arranjos Fixos</span>
-          </div>
-
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                  <th className="p-2.5 text-rose-600 dark:text-rose-400 sm:w-36">DIAS DA SEMANA</th>
-                  <th className="p-2.5 text-rose-600 dark:text-rose-400">DIRIGENTE</th>
-                  <th className="p-2.5 text-rose-600 dark:text-rose-400 sm:w-36">Horários</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {diasSemana.map((d) => {
-                  const ehDestacado = irmaoSelecionado && verificarIrmao(irmaoSelecionado, d.dirigente);
-                  return (
-                    <tr
-                      key={d.diaSemana}
-                      className={ehDestacado ? 'bg-amber-100 font-bold text-amber-950 dark:bg-amber-950/40 dark:text-amber-100' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}
-                    >
-                      <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">{d.diaSemana}</td>
-                      <td className="p-2.5">
-                        <span className={ehDestacado ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                          {d.dirigente}
-                        </span>
-                        {d.localOuNota && (
-                          <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                            ({d.localOuNota})
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-2.5 font-semibold text-slate-700 dark:text-slate-300">{d.horario}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* SEÇÃO 2: SÁBADOS E DOMINGOS (ORGANIZADO POR MESES COM CABEÇALHO AZUL)     */}
-        {/* ========================================================================= */}
-        <div className="p-4 sm:p-5">
-          <div className="mb-4 rounded-lg bg-sky-200/80 px-4 py-2 font-bold uppercase tracking-wider text-sky-950 dark:bg-sky-950/60 dark:text-sky-200">
-            SÁBADOS E DOMINGOS
-          </div>
-
-          <div className="space-y-6">
-            {(Object.entries(campoAgrupadoPorMes) as [string, CampoFimDeSemanaItem[]][]).map(([mesTitulo, itens]) => (
-              <div key={mesTitulo} className="overflow-hidden rounded-lg border border-sky-300 dark:border-slate-800">
-                {/* Cabeçalho do Mês estilo PDF */}
-                <div className="bg-sky-100 px-4 py-2 text-center font-black uppercase tracking-widest text-sky-900 dark:bg-sky-900/60 dark:text-sky-100">
-                  {mesTitulo}
-                </div>
-
-                <table className="w-full text-left text-xs sm:text-sm">
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {itens.map((item, idx) => {
-                      const ehDomingo = item.diaSemana === 'Domingo';
-                      const ehEspecial = item.ehEspecial;
-                      const hasIrmao = irmaoSelecionado && verificarIrmao(irmaoSelecionado, item.dirigente);
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`transition ${
-                            hasIrmao
-                              ? 'bg-amber-100/90 font-medium text-amber-950 dark:bg-amber-950/40 dark:text-amber-100'
-                              : ehEspecial
-                              ? 'bg-rose-50 font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
-                              : idx % 2 === 0
-                              ? 'bg-white dark:bg-slate-900'
-                              : 'bg-slate-50/70 dark:bg-slate-900/60'
-                          } hover:bg-sky-50/60 dark:hover:bg-sky-950/20`}
-                        >
-                          {/* Data */}
-                          <td className="w-20 p-2.5 font-bold text-slate-900 dark:text-slate-100">
-                            {item.data}
-                          </td>
-
-                          {/* Dia da Semana */}
-                          <td className="w-28 p-2.5 font-bold">
-                            <span className={ehDomingo ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}>
-                              {item.diaSemana}
-                            </span>
-                          </td>
-
-                          {/* Dirigente */}
-                          <td className="p-2.5">
-                            <span
-                              className={`inline-block ${
-                                hasIrmao
-                                  ? 'rounded bg-amber-200 px-1 py-0.5 font-black text-amber-950 dark:bg-amber-800 dark:text-amber-100'
-                                  : ehEspecial
-                                  ? 'text-rose-700 dark:text-rose-300'
-                                  : item.dirigente.includes('Todos os grupos no salão')
-                                  ? 'text-rose-700 dark:text-rose-400 font-semibold'
-                                  : 'text-slate-800 dark:text-slate-100'
-                              }`}
-                            >
-                              {item.dirigente}
-                            </span>
-                          </td>
-
-                          {/* Ações do Responsável */}
-                          {isAdmin && (
-                            <td className="w-20 p-2.5 text-center print:hidden">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleOpenEdit(item)}
-                                  className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-sky-700 dark:hover:bg-slate-800 dark:hover:text-sky-400"
-                                  title="Editar data"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteItem(item.id, item.data)}
-                                  className="rounded p-1 text-slate-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
-                                  title="Remover data"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* SEÇÃO 3: NOTAS OFICIAIS DO RODAPÉ (COMO NO FORMULÁRIO DO PDF)             */}
-        {/* ========================================================================= */}
-        <div className="border-t-2 border-sky-300 bg-sky-50/70 p-4 text-xs font-semibold text-sky-950 dark:border-slate-800 dark:bg-slate-900/90 dark:text-sky-200 sm:p-5">
-          <div className="mb-2 flex items-center gap-1.5 text-sky-800 dark:text-sky-300">
-            <Info className="h-4 w-4" />
-            <span className="font-bold uppercase tracking-wider">Instruções e Locais de Encontro Oficiais:</span>
-          </div>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            <p>*SÁBADO NO SALÃO DO REINO ÀS 9:15 HORAS</p>
-            <p>*DOMINGO ÀS 9:15 NOS GRUPOS</p>
-            <p>*Terça-Feira Zoom às 19:30</p>
-            <p>*Quarta-Feira às 9:15 na casa da Maria José Silva</p>
-            <p>*Quinta-feira às 15:30 na casa da Tereza Aparecido</p>
-            <p>*Sexta-Feira às 9:15 na casa da Tereza Aparecido</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                                      */}
-      {/* ========================================================================= */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
-                  <Lock className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Acesso do Responsável</h3>
-                  <p className="text-xs text-slate-500">Serviço de Campo</p>
-                </div>
-              </div>
-              <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Senha Administrativa da Congregação
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPasswordText ? 'text' : 'password'}
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Digite a senha..."
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordText(!showPasswordText)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+            {programacoesFuturas.length > 0 ? (
+              <div className="space-y-3">
+                {programacoesFuturas.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-300 bg-white p-5 shadow-2xs hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900 transition-colors"
                   >
-                    {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {authError && <p className="mt-1 text-xs font-medium text-rose-600">{authError}</p>}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 w-full">
+                        {/* Data */}
+                        <div>
+                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Data:
+                          </span>
+                          <span className="text-base font-black text-slate-900 dark:text-white">
+                            {item.data}
+                          </span>
+                        </div>
+
+                        {/* Horário */}
+                        <div>
+                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Horário:
+                          </span>
+                          <span className="text-base font-black text-slate-900 dark:text-white">
+                            {item.horario}
+                          </span>
+                        </div>
+
+                        {/* Ponto de encontro */}
+                        <div>
+                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Ponto de encontro:
+                          </span>
+                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                            {item.pontoEncontro}
+                          </span>
+                        </div>
+
+                        {/* Responsável */}
+                        <div>
+                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Responsável:
+                          </span>
+                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                            {item.responsavel || '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {isAdmin && (
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditar(item)}
+                            className="rounded-lg border border-slate-300 bg-white p-2 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 transition-colors"
+                            title="Editar programação"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setItemParaExcluir(item)}
+                            className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 transition-colors"
+                            title="Excluir programação"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-4 text-center text-sm font-medium text-slate-500 dark:text-slate-400">
+                Não há outras programações futuras no momento.
+              </p>
+            )}
+          </section>
+
+          {/* 3. PROGRAMAÇÕES ANTERIORES (CONSULTA) */}
+          {programacoesAnteriores.length > 0 && (
+            <section className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between pb-2">
+                <h2 className="text-base font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Programações Anteriores
+                </h2>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-500">
+                  {programacoesAnteriores.length} registro(s)
+                </span>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAuthModal(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-sky-700 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-800"
-                >
-                  Entrar
-                </button>
+              <div className="space-y-2 opacity-80 hover:opacity-100 transition-opacity">
+                {programacoesAnteriores.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-900/60"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 w-full text-xs">
+                        <div>
+                          <span className="font-bold text-slate-500 dark:text-slate-400">Data: </span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.data}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-500 dark:text-slate-400">Horário: </span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.horario}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-500 dark:text-slate-400">Ponto de encontro: </span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.pontoEncontro}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-500 dark:text-slate-400">Responsável: </span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.responsavel || '—'}</span>
+                        </div>
+                      </div>
+
+                      {isAdmin && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditar(item)}
+                            className="rounded-lg border border-slate-300 bg-white p-1.5 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300"
+                            title="Editar programação"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setItemParaExcluir(item)}
+                            className="rounded-lg border border-slate-300 bg-white p-1.5 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
+                            title="Excluir programação"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </form>
-          </div>
+            </section>
+          )}
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL DE EDIÇÃO / CRIAÇÃO DE ESCALA DE CAMPO                              */}
+      {/* MODAL DE CADASTRO / EDIÇÃO DE PROGRAMAÇÃO                                 */}
+      {/* Apenas: Data, Horário, Ponto de encontro, Irmão responsável               */}
       {/* ========================================================================= */}
       {isEditorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {itemParaEditar ? 'Editar Dirigente de Campo' : 'Novo Dirigente de Campo'}
-              </h3>
-              <button onClick={() => setIsEditorOpen(false)} className="text-slate-400 hover:text-slate-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <div>
+                <h3 className="text-base font-black uppercase tracking-wide text-slate-900 dark:text-white">
+                  {itemParaEditar ? 'Editar Programação' : 'Cadastrar Programação'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Serviço de Campo
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditorOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveItem} className="space-y-3">
+            <form onSubmit={handleSaveItem} className="space-y-4">
+              {/* Data */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Mês</label>
-                <select
-                  value={formData.mes}
-                  onChange={(e) => setFormData({ ...formData, mes: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Data (DD/MM)</label>
-                  <input
-                    type="text"
-                    value={formData.data}
-                    onChange={(e) => setFormData({ ...formData, data: e.target.value })}
-                    placeholder="Ex: 03/01"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Dia da Semana</label>
-                  <select
-                    value={formData.diaSemana}
-                    onChange={(e) => setFormData({ ...formData, diaSemana: e.target.value as 'Sábado' | 'Domingo' })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="Sábado">Sábado</option>
-                    <option value="Domingo">Domingo</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Dirigente / Designação</label>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Data *
+                </label>
                 <input
                   type="text"
-                  value={formData.dirigente}
-                  onChange={(e) => setFormData({ ...formData, dirigente: e.target.value })}
-                  placeholder="Ex: Marcelo, Samuel (Todos os grupos no salão)"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  value={formData.data}
+                  onChange={(e) => setFormData({ ...formData, data: e.target.value })}
+                  placeholder="Ex: 26/09/2026 ou 26/09"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
                   required
                 />
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="chkEspecialCampo"
-                  checked={formData.ehEspecial}
-                  onChange={(e) => setFormData({ ...formData, ehEspecial: e.target.checked })}
-                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                />
-                <label htmlFor="chkEspecialCampo" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Destaque especial (Assembléia / Congresso / Visita do Viajante)
+              {/* Horário */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Horário *
                 </label>
+                <input
+                  type="text"
+                  value={formData.horario}
+                  onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
+                  placeholder="Ex: 09:00 ou 09:15"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
+                  required
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-4">
+              {/* Ponto de encontro */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Ponto de encontro *
+                </label>
+                <input
+                  type="text"
+                  value={formData.pontoEncontro}
+                  onChange={(e) => setFormData({ ...formData, pontoEncontro: e.target.value })}
+                  placeholder="Ex: Salão do Reino ou Praça Vila Cisper"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              {/* Irmão responsável */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Irmão responsável *
+                </label>
+                <input
+                  type="text"
+                  value={formData.responsavel}
+                  onChange={(e) => setFormData({ ...formData, responsavel: e.target.value })}
+                  placeholder="Ex: Marcelo Ferreira ou Dhiego"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              {/* Botões do Formulário */}
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-sky-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-800"
+                  className="rounded-xl bg-sky-700 px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow-xs hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-700"
                 >
                   Salvar
                 </button>
@@ -855,16 +730,128 @@ export const ServicoDeCampoView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Importação e Exportação de Planilhas em Lote */}
-      <BulkImportExportModal
-        isOpen={isBulkModalOpen}
-        onClose={() => setIsBulkModalOpen(false)}
-        modulo="campo"
-        tituloModulo="Serviço de Campo e Dirigentes"
-        dadosAtuais={campoFds}
-        isAdmin={isAdmin}
-        onImportadoComSucesso={handleBulkSuccess}
-      />
+      {/* ========================================================================= */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO                                         */}
+      {/* ========================================================================= */}
+      {itemParaExcluir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-base font-black text-slate-900 dark:text-white">
+              Excluir Programação?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              Deseja realmente excluir a programação de serviço de campo do dia{' '}
+              <strong className="text-slate-900 dark:text-white">
+                {itemParaExcluir.data}
+              </strong>
+              ?
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setItemParaExcluir(null)}
+                className="rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExcluir}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DE ACESSO DO RESPONSÁVEL                                           */}
+      {/* ========================================================================= */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-sky-700 dark:text-sky-400" />
+                <h3 className="text-base font-black uppercase tracking-wide text-slate-900 dark:text-white">
+                  Acesso do Responsável
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAuthModalOpen(false);
+                  setPasswordInput('');
+                  setAuthError('');
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Senha de Acesso
+                </label>
+                <div className="relative mt-1">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={passwordInput}
+                    onChange={(e) => {
+                      setPasswordInput(e.target.value);
+                      if (authError) setAuthError('');
+                    }}
+                    placeholder="Digite a senha"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 pr-10 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                {authError && (
+                  <p className="mt-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                    {authError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    setPasswordInput('');
+                    setAuthError('');
+                  }}
+                  className="rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-sky-700 px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-700"
+                >
+                  Entrar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

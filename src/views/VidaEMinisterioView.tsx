@@ -4,37 +4,37 @@ import {
   getStoredS140TSemanas,
   saveS140TSemana,
   deleteS140TSemana,
-  resetS140TToSample,
-  extrairTodosNomesDesignados,
-  verificarDesignacaoIrmao,
 } from '../data/s140tStorage';
 import {
   isAdminAuthenticated,
   setAdminAuthenticated,
   verifyAdminPassword,
 } from '../data/territoriosStorage';
-import { S140TDocumentSheet } from '../components/S140TDocumentSheet';
-import { S140TEditorModal } from '../components/S140TEditorModal';
+import { VidaEMinisterioEditorModal } from '../components/VidaEMinisterioEditorModal';
 import {
+  Calendar,
   Lock,
   Unlock,
   Plus,
-  Printer,
-  Search,
+  Edit2,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  Sparkles,
+  Compass,
+  Heart,
+  Users,
   CheckCircle2,
-  Calendar,
-  RotateCcw,
-  ShieldCheck,
+  AlertCircle,
+  X,
   Eye,
   EyeOff,
-  X,
-  User,
-  BookOpen,
 } from 'lucide-react';
 
 export const VidaEMinisterioView: React.FC = () => {
-  // Estado das semanas da programação
   const [semanas, setSemanas] = useState<S140TSemana[]>([]);
+  const [semanaIdAtiva, setSemanaIdAtiva] = useState<string>('');
 
   // Autenticação do Irmão Responsável
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -43,22 +43,27 @@ export const VidaEMinisterioView: React.FC = () => {
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
 
-  // Filtro / Realce por Irmão ("Minhas Designações")
-  const [irmaoSelecionado, setIrmaoSelecionado] = useState<string>('');
-
-  // Filtro por Semana ou "Todas as Semanas"
-  const [semanaFiltroId, setSemanaFiltroId] = useState<string>('todas');
-
-  // Estado do Modal de Edição/Criação
+  // Editor Modal
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [semanaParaEditar, setSemanaParaEditar] = useState<S140TSemana | null>(null);
 
-  // Mensagem de feedback
-  const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
+  // Mensagens de feedback
+  const [feedback, setFeedback] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
-  // Carregar dados no mount e ouvir atualizações do Firebase em tempo real
+  // Confirmação de exclusão
+  const [semanaParaExcluir, setSemanaParaExcluir] = useState<string | null>(null);
+
+  // Carregar semanas e estado de autenticação
+  const carregarDados = () => {
+    const lista = getStoredS140TSemanas();
+    setSemanas(lista);
+    if (lista.length > 0 && !semanaIdAtiva) {
+      setSemanaIdAtiva(lista[0].id);
+    }
+  };
+
   useEffect(() => {
-    setSemanas(getStoredS140TSemanas());
+    carregarDados();
     setIsAdmin(isAdminAuthenticated());
 
     const handleFirebaseUpdate = (e: Event) => {
@@ -74,456 +79,498 @@ export const VidaEMinisterioView: React.FC = () => {
     };
   }, []);
 
-  // Lista de todos os irmãos com designação para o dropdown de consulta
-  const nomesComDesignacao = useMemo(() => {
-    return extrairTodosNomesDesignados(semanas);
-  }, [semanas]);
+  // Semana ativa
+  const semanaAtual = useMemo(() => {
+    if (semanas.length === 0) return null;
+    const encontrada = semanas.find((s) => s.id === semanaIdAtiva);
+    return encontrada || semanas[0];
+  }, [semanas, semanaIdAtiva]);
 
-  // Contagem de designações do irmão consultado
-  const resumoDesignacoesIrmao = useMemo(() => {
-    if (!irmaoSelecionado) return null;
-    let count = 0;
-    const detalhes: string[] = [];
+  // Índice da semana ativa para navegação anterior / próxima
+  const indiceSemanaAtual = useMemo(() => {
+    if (!semanaAtual) return -1;
+    return semanas.findIndex((s) => s.id === semanaAtual.id);
+  }, [semanas, semanaAtual]);
 
-    semanas.forEach((sem) => {
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.presidente)) {
-        count++;
-        detalhes.push(`Presidente (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.oracaoInicial)) {
-        count++;
-        detalhes.push(`Oração Inicial (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.discursoTesourosIrmao)) {
-        count++;
-        detalhes.push(`Discurso Tesouros (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.joiasEspirituaisIrmao)) {
-        count++;
-        detalhes.push(`Joias Espirituais (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.leituraBibliaIrmao)) {
-        count++;
-        detalhes.push(`Leitura da Bíblia (${sem.periodo})`);
-      }
-      sem.partesMinisterio?.forEach((pm) => {
-        if (verificarDesignacaoIrmao(irmaoSelecionado, pm.designado)) {
-          count++;
-          detalhes.push(`${pm.titulo} - Titular (${sem.periodo})`);
-        }
-        if (verificarDesignacaoIrmao(irmaoSelecionado, pm.ajudante)) {
-          count++;
-          detalhes.push(`${pm.titulo} - Ajudante (${sem.periodo})`);
-        }
-      });
-      sem.partesVidaCrista?.forEach((pvc) => {
-        if (verificarDesignacaoIrmao(irmaoSelecionado, pvc.designado)) {
-          count++;
-          detalhes.push(`${pvc.titulo} (${sem.periodo})`);
-        }
-      });
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.estudoBiblicoDirigente)) {
-        count++;
-        detalhes.push(`Dirigente do Estudo Bíblico (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.estudoBiblicoLeitor)) {
-        count++;
-        detalhes.push(`Leitor do Estudo Bíblico (${sem.periodo})`);
-      }
-      if (verificarDesignacaoIrmao(irmaoSelecionado, sem.oracaoFinal)) {
-        count++;
-        detalhes.push(`Oração Final (${sem.periodo})`);
-      }
-    });
-
-    return { count, detalhes };
-  }, [irmaoSelecionado, semanas]);
-
-  // Semanas exibidas após filtro
-  const semanasExibidas = useMemo(() => {
-    if (semanaFiltroId === 'todas') return semanas;
-    return semanas.filter((s) => s.id === semanaFiltroId);
-  }, [semanas, semanaFiltroId]);
-
-  // -------------------------------------------------------------------
-  // Ações de Autenticação do Responsável
-  // -------------------------------------------------------------------
-  const handleOpenAuth = () => {
-    setPasswordInput('');
-    setAuthError('');
-    setShowPasswordText(false);
-    setShowAuthModal(true);
+  const handleProximaSemana = () => {
+    if (indiceSemanaAtual < semanas.length - 1) {
+      setSemanaIdAtiva(semanas[indiceSemanaAtual + 1].id);
+    }
   };
 
-  const handleVerifyAuth = (e: React.FormEvent) => {
+  const handleSemanaAnterior = () => {
+    if (indiceSemanaAtual > 0) {
+      setSemanaIdAtiva(semanas[indiceSemanaAtual - 1].id);
+    }
+  };
+
+  // Autenticação de Responsável
+  const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError('');
     if (verifyAdminPassword(passwordInput)) {
       setAdminAuthenticated(true);
       setIsAdmin(true);
       setShowAuthModal(false);
       setPasswordInput('');
-      setFeedbackMsg({
-        tipo: 'sucesso',
-        texto: 'Acesso do responsável autenticado com sucesso.',
-      });
-      setTimeout(() => setFeedbackMsg(null), 4000);
+      setAuthError('');
+      setFeedback({ tipo: 'sucesso', texto: 'Modo de responsável ativado com sucesso.' });
+      setTimeout(() => setFeedback(null), 3500);
     } else {
       setAuthError('Senha incorreta. Tente novamente.');
     }
   };
 
-  const handleLogoutAdmin = () => {
+  const handleLogout = () => {
     setAdminAuthenticated(false);
     setIsAdmin(false);
-    setFeedbackMsg({
-      tipo: 'sucesso',
-      texto: 'Sessão do responsável encerrada. Modo de consulta ativo.',
-    });
-    setTimeout(() => setFeedbackMsg(null), 3000);
+    setFeedback({ tipo: 'sucesso', texto: 'Você saiu do modo de responsável.' });
+    setTimeout(() => setFeedback(null), 3000);
   };
 
-  // -------------------------------------------------------------------
-  // Ações do Responsável (Criação, Edição, Exclusão)
-  // -------------------------------------------------------------------
-  const handleOpenCreate = () => {
+  // Abrir Modal para Cadastro
+  const handleNovoCadastro = () => {
     setSemanaParaEditar(null);
     setIsEditorOpen(true);
   };
 
-  const handleOpenEdit = (semana: S140TSemana) => {
+  // Abrir Modal para Edição
+  const handleEditar = (semana: S140TSemana) => {
     setSemanaParaEditar(semana);
     setIsEditorOpen(true);
   };
 
-  const handleSaveSemana = (semana: S140TSemana) => {
+  // Salvar Programação
+  const handleSalvarSemana = (semana: S140TSemana) => {
     const res = saveS140TSemana(semana);
     if (res.success && res.data) {
       setSemanas(res.data);
+      setSemanaIdAtiva(semana.id);
       setIsEditorOpen(false);
-      setSemanaParaEditar(null);
-      setFeedbackMsg({
-        tipo: 'sucesso',
-        texto: `Programação da semana "${semana.periodo}" salva com sucesso.`,
-      });
-      setTimeout(() => setFeedbackMsg(null), 4000);
+      setFeedback({ tipo: 'sucesso', texto: 'Programação salva com sucesso.' });
+      setTimeout(() => setFeedback(null), 3500);
     } else {
-      setFeedbackMsg({
-        tipo: 'erro',
-        texto: res.error || 'Não foi possível salvar a programação.',
-      });
+      setFeedback({ tipo: 'erro', texto: res.error || 'Erro ao salvar a programação.' });
+      setTimeout(() => setFeedback(null), 4000);
     }
   };
 
-  const handleDeleteSemana = (id: string) => {
-    const alvo = semanas.find((s) => s.id === id);
-    const confirmou = window.confirm(
-      `Deseja realmente remover a semana "${alvo?.periodo || 'selecionada'}" da programação?`
-    );
-    if (!confirmou) return;
-
-    const res = deleteS140TSemana(id);
+  // Excluir Programação
+  const handleConfirmarExclusao = () => {
+    if (!semanaParaExcluir) return;
+    const res = deleteS140TSemana(semanaParaExcluir);
     if (res.success && res.data) {
       setSemanas(res.data);
-      setFeedbackMsg({
-        tipo: 'sucesso',
-        texto: 'Semana removida da programação.',
-      });
-      setTimeout(() => setFeedbackMsg(null), 3000);
+      if (res.data.length > 0) {
+        setSemanaIdAtiva(res.data[0].id);
+      } else {
+        setSemanaIdAtiva('');
+      }
+      setSemanaParaExcluir(null);
+      setFeedback({ tipo: 'sucesso', texto: 'Programação excluída com sucesso.' });
+      setTimeout(() => setFeedback(null), 3500);
     } else {
-      setFeedbackMsg({
-        tipo: 'erro',
-        texto: res.error || 'Erro ao remover semana.',
-      });
+      setFeedback({ tipo: 'erro', texto: res.error || 'Erro ao excluir a programação.' });
+      setTimeout(() => setFeedback(null), 4000);
     }
-  };
-
-  const handleResetPadrao = () => {
-    const confirmou = window.confirm(
-      'Deseja restaurar as semanas canônicas originais do documento oficial S-140-T?'
-    );
-    if (!confirmou) return;
-    const padrao = resetS140TToSample();
-    setSemanas(padrao);
-    setFeedbackMsg({
-      tipo: 'sucesso',
-      texto: 'Dados restaurados para a programação oficial do documento.',
-    });
-    setTimeout(() => setFeedbackMsg(null), 4000);
-  };
-
-  const handlePrint = () => {
-    window.print();
   };
 
   return (
-    <div className="space-y-6">
-      {/* ================================================================= */}
-      {/* 1. TOPO: BARRA SUPERIOR & CONTROLES DO USUÁRIO                   */}
-      {/* ================================================================= */}
-      <div className="border-b border-slate-200 pb-4 dark:border-slate-800 no-print">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto w-full max-w-3xl space-y-8 pb-16 pt-2">
+      {/* ------------------------------------------------------------- */}
+      {/* CABEÇALHO DO MÓDULO                                           */}
+      {/* ------------------------------------------------------------- */}
+      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-6 w-6 text-slate-700 dark:text-slate-300" />
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-                Vida e Ministério
-              </h2>
-            </div>
-            <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-              Programação da reunião do meio de semana &bull; Formulário oficial S-140-T
-            </p>
+            <span className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
+              Congregação: Vila Cisper
+            </span>
+            <h1 className="mt-1 text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+              Vida e Ministério
+            </h1>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Botão de Impressão Oficial */}
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              title="Imprimir formato A4 da folha oficial"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              <span>Imprimir / PDF</span>
-            </button>
-
-            {/* Alternar Acesso Responsável */}
-            {!isAdmin ? (
-              <button
-                type="button"
-                onClick={handleOpenAuth}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                <Lock className="h-3.5 w-3.5 text-slate-500" />
-                <span>Acesso do Responsável</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Responsável Ativo
-                </span>
+          {/* Botões do Responsável */}
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleLogoutAdmin}
-                  className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  onClick={handleNovoCadastro}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-xs hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700"
                 >
-                  Sair
+                  <Plus className="h-4 w-4" />
+                  <span>Cadastrar Programação</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  title="Sair do modo responsável"
+                >
+                  <Unlock className="h-3.5 w-3.5 text-green-600" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordInput('');
+                  setAuthError('');
+                  setShowAuthModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                <span>Responsável</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Feedback Alert */}
+        {feedback && (
+          <div
+            className={`mt-4 flex items-center gap-2 rounded-xl p-3.5 text-sm font-bold ${
+              feedback.tipo === 'sucesso'
+                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+            }`}
+          >
+            {feedback.tipo === 'sucesso' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 shrink-0" />
+            )}
+            <span>{feedback.texto}</span>
+          </div>
+        )}
+      </header>
+
+      {/* ------------------------------------------------------------- */}
+      {/* SELETOR SIMPLES DA SEMANA DA REUNIÃO                          */}
+      {/* ------------------------------------------------------------- */}
+      {semanas.length > 0 ? (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSemanaAnterior}
+              disabled={indiceSemanaAtual <= 0}
+              className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              aria-label="Semana anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleProximaSemana}
+              disabled={indiceSemanaAtual >= semanas.length - 1}
+              className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              aria-label="Próxima semana"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+            <div className="ml-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Semana selecionada:
+              </span>
+              <div className="text-base font-black text-slate-900 dark:text-white">
+                {semanaAtual?.dataReuniao || semanaAtual?.periodo}
+              </div>
+            </div>
+          </div>
+
+          {/* Dropdown direto para escolher a semana */}
+          <div className="flex items-center gap-2">
+            <select
+              value={semanaAtual?.id}
+              onChange={(e) => setSemanaIdAtiva(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              {semanas.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.dataReuniao || s.periodo}
+                </option>
+              ))}
+            </select>
+
+            {/* Ações administrativas para a semana selecionada */}
+            {isAdmin && semanaAtual && (
+              <div className="flex items-center gap-1.5 ml-1">
+                <button
+                  type="button"
+                  onClick={() => handleEditar(semanaAtual)}
+                  className="rounded-lg border border-slate-300 bg-white p-2 text-blue-700 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-400"
+                  title="Editar programação"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSemanaParaExcluir(semanaAtual.id)}
+                  className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
+                  title="Excluir programação"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             )}
           </div>
         </div>
+      ) : null}
 
-        {/* Feedback visual temporário */}
-        {feedbackMsg && (
-          <div
-            className={`mt-3 flex items-center justify-between rounded-lg p-3 text-xs font-medium ${
-              feedbackMsg.tipo === 'sucesso'
-                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>{feedbackMsg.texto}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFeedbackMsg(null)}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ================================================================= */}
-      {/* 2. BARRA DE FERRAMENTAS DO RESPONSÁVEL (QUANDO AUTENTICADO)       */}
-      {/* ================================================================= */}
-      {isAdmin && (
-        <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 no-print">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-bold">
-                R
+      {/* ------------------------------------------------------------- */}
+      {/* ÁREA PÚBLICA DE VISUALIZAÇÃO DA PROGRAMAÇÃO                   */}
+      {/* ------------------------------------------------------------- */}
+      {semanaAtual ? (
+        <div className="space-y-6">
+          {/* 1. DADOS DA REUNIÃO DA SEMANA */}
+          <section className="rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-xs dark:border-slate-700 dark:bg-slate-900 sm:p-7 space-y-4">
+            <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Programação da Reunião
               </span>
+              <h2 className="text-xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-2xl">
+                {semanaAtual.dataReuniao || semanaAtual.periodo}
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-base">
               <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Painel de Criação e Edição do Responsável
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Presidente
                 </span>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Crie novas semanas, ajuste designações ou redefina os dados do formulário S-140-T.
-                </p>
+                <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.presidente || '—'}
+                </span>
+              </div>
+              <div>
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Oração Inicial
+                </span>
+                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {semanaAtual.oracaoInicial || '—'}
+                </span>
+              </div>
+              <div>
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Oração Final
+                </span>
+                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {semanaAtual.oracaoFinal || '—'}
+                </span>
               </div>
             </div>
+          </section>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleResetPadrao}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                title="Restaura os dados originais do documento S-140-T de Setembro"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>Restaurar Modelo Oficial</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleOpenCreate}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-              >
-                <Plus className="h-4 w-4" />
-                <span>+ Nova Semana</span>
-              </button>
+          {/* 2. TESOUROS DA PALAVRA DE DEUS */}
+          <section className="rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-xs dark:border-slate-700 dark:bg-slate-900 sm:p-7 space-y-4">
+            <div className="flex items-center gap-3 border-b-2 border-slate-900 pb-3 dark:border-slate-100">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                <BookOpen className="h-5 w-5" />
+              </div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white sm:text-xl">
+                TESOUROS DA PALAVRA DE DEUS
+              </h2>
             </div>
-          </div>
+
+            <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-base sm:text-lg">
+              {/* Discurso de 10 min */}
+              <li className="py-3 space-y-1">
+                <div className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.discursoTesourosTitulo || 'Discurso Temático'}
+                </div>
+                <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                  <span className="font-bold">{semanaAtual.discursoTesourosIrmao || '—'}</span>
+                </div>
+              </li>
+
+              {/* Joias Espirituais */}
+              <li className="py-3 space-y-1">
+                <div className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.joiasEspirituaisTitulo || 'Joias espirituais'}
+                </div>
+                <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                  <span className="font-bold">{semanaAtual.joiasEspirituaisIrmao || '—'}</span>
+                </div>
+              </li>
+
+              {/* Leitura da Bíblia */}
+              <li className="py-3 flex flex-wrap items-baseline gap-2">
+                <span className="font-extrabold text-slate-900 dark:text-white">Leitura da Bíblia:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {semanaAtual.leituraBibliaIrmao || '—'}
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          {/* 3. FAÇA SEU MELHOR NO MINISTÉRIO */}
+          <section className="rounded-2xl border-2 border-amber-300 bg-white p-6 shadow-xs dark:border-amber-800/60 dark:bg-slate-900 sm:p-7 space-y-4">
+            <div className="flex items-center gap-3 border-b-2 border-amber-600 pb-3 dark:border-amber-500">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-600 text-white">
+                <Compass className="h-5 w-5" />
+              </div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 sm:text-xl">
+                FAÇA SEU MELHOR NO MINISTÉRIO
+              </h2>
+            </div>
+
+            {semanaAtual.partesMinisterio && semanaAtual.partesMinisterio.length > 0 ? (
+              <div className="space-y-3">
+                {semanaAtual.partesMinisterio.map((parte, idx) => (
+                  <div
+                    key={parte.id || idx}
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 space-y-2"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                        {parte.titulo || `Parte ${idx + 1}`}
+                      </h3>
+                      {parte.tempoMin && (
+                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          {parte.tempoMin} min
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-2 sm:text-base pt-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-semibold text-slate-500 dark:text-slate-400">Estudante:</span>
+                        <span className="font-bold text-slate-900 dark:text-white">
+                          {parte.designado || '—'}
+                        </span>
+                      </div>
+                      {parte.ajudante && (
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">Ajudante:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {parte.ajudante}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                Nenhuma designação de estudante cadastrada para esta semana.
+              </p>
+            )}
+          </section>
+
+          {/* 4. NOSSA VIDA CRISTÃ */}
+          <section className="rounded-2xl border-2 border-rose-300 bg-white p-6 shadow-xs dark:border-rose-800/60 dark:bg-slate-900 sm:p-7 space-y-4">
+            <div className="flex items-center gap-3 border-b-2 border-rose-700 pb-3 dark:border-rose-500">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-700 text-white">
+                <Heart className="h-5 w-5" />
+              </div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-rose-950 dark:text-rose-300 sm:text-xl">
+                NOSSA VIDA CRISTÃ
+              </h2>
+            </div>
+
+            {semanaAtual.partesVidaCrista && semanaAtual.partesVidaCrista.length > 0 ? (
+              <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-base sm:text-lg">
+                {semanaAtual.partesVidaCrista.map((parte, idx) => (
+                  <li key={parte.id || idx} className="py-3 space-y-1">
+                    <div className="font-extrabold text-slate-900 dark:text-white">
+                      {parte.titulo || `Parte ${idx + 1}`}
+                    </div>
+                    <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                      <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                      <span className="font-bold">{parte.designado || '—'}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                Nenhuma parte cadastrada para esta semana.
+              </p>
+            )}
+          </section>
+
+          {/* 5. ESTUDO BÍBLICO DE CONGREGAÇÃO */}
+          <section className="rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-xs dark:border-slate-700 dark:bg-slate-900 sm:p-7 space-y-4">
+            <div className="flex items-center gap-3 border-b-2 border-slate-900 pb-3 dark:border-slate-100">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                <Users className="h-5 w-5" />
+              </div>
+              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white sm:text-xl">
+                ESTUDO BÍBLICO DE CONGREGAÇÃO
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 text-base sm:text-lg">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Dirigente
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.estudoBiblicoDirigente || '—'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Leitor
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.estudoBiblicoLeitor || '—'}
+                </span>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          <p className="text-base font-bold">Nenhuma programação cadastrada no momento.</p>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleNovoCadastro}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-extrabold text-white hover:bg-blue-800"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Cadastrar Primeira Programação</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* ================================================================= */}
-      {/* 3. MELHORIA ELEGANTE PARA OS IRMÃOS: CONSULTA & DESTAQUE PESSOAL  */}
-      {/* ================================================================= */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900/90 no-print space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Consulta rápida de designações por irmão/irmã */}
-          <div className="flex-1 max-w-md">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
-              Consultar / Destacar Minhas Designações
-            </label>
-            <div className="relative flex items-center">
-              <User className="absolute left-3 h-4 w-4 text-slate-400 pointer-events-none" />
-              <select
-                value={irmaoSelecionado}
-                onChange={(e) => setIrmaoSelecionado(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 pl-9 pr-8 py-1.5 text-xs font-medium text-slate-900 focus:border-slate-900 focus:bg-white focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="">Selecione o seu nome para destacar suas partes...</option>
-                {nomesComDesignacao.map((nome) => (
-                  <option key={nome} value={nome}>
-                    {nome}
-                  </option>
-                ))}
-              </select>
-              {irmaoSelecionado && (
-                <button
-                  type="button"
-                  onClick={() => setIrmaoSelecionado('')}
-                  title="Limpar destaque"
-                  className="absolute right-2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Seletor de Semanas para navegação rápida */}
-          <div className="shrink-0">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
-              Exibição das Semanas
-            </label>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSemanaFiltroId('todas')}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                  semanaFiltroId === 'todas'
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                }`}
-              >
-                Todas ({semanas.length})
-              </button>
-              {semanas.map((sem) => (
-                <button
-                  key={sem.id}
-                  type="button"
-                  onClick={() => setSemanaFiltroId(sem.id)}
-                  className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                    semanaFiltroId === sem.id
-                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-bold'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
-                  title={sem.periodo}
-                >
-                  {sem.periodo.split(' ')[0]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Resumo do Irmão Selecionado */}
-        {irmaoSelecionado && resumoDesignacoesIrmao && (
-          <div className="rounded-lg bg-amber-50/80 border border-amber-200 p-3 dark:bg-amber-950/40 dark:border-amber-900/60">
-            <div className="flex items-start gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white text-[11px] font-bold shrink-0 mt-0.5">
-                {resumoDesignacoesIrmao.count}
-              </span>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-amber-900 dark:text-amber-200">
-                  {irmaoSelecionado} possui {resumoDesignacoesIrmao.count}{' '}
-                  {resumoDesignacoesIrmao.count === 1 ? 'designação' : 'designações'} no período da programação:
-                </span>
-                <div className="flex flex-wrap gap-1.5 text-[11px] text-amber-800 dark:text-amber-300">
-                  {resumoDesignacoesIrmao.detalhes.map((det, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center rounded bg-amber-100/90 px-2 py-0.5 font-medium dark:bg-amber-900/60 text-amber-900 dark:text-amber-200"
-                    >
-                      &bull; {det}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ================================================================= */}
-      {/* 4. VISUALIZAÇÃO FIEL AO DOCUMENTO OFICIAL S-140-T                */}
-      {/* ================================================================= */}
-      <S140TDocumentSheet
-        semanas={semanasExibidas}
-        destacarIrmao={irmaoSelecionado}
-        isAdmin={isAdmin}
-        onEdit={handleOpenEdit}
-        onDelete={handleDeleteSemana}
-      />
-
-      {/* ================================================================= */}
-      {/* 5. MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                          */}
-      {/* ================================================================= */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                          */}
+      {/* ------------------------------------------------------------- */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs no-print">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Acesso do Irmão Responsável
-                </h3>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Acesso do Responsável
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
-              Digite a senha administrativa da congregação para criar, editar ou excluir designações da reunião de meio de semana.
-            </p>
+            <form onSubmit={handleLoginSubmit} className="mt-4 space-y-4">
+              {authError && (
+                <div className="rounded-lg bg-red-50 p-2.5 text-xs font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-300">
+                  {authError}
+                </div>
+              )}
 
-            <form onSubmit={handleVerifyAuth} className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
                   Senha do Responsável
                 </label>
                 <div className="relative">
@@ -531,38 +578,32 @@ export const VidaEMinisterioView: React.FC = () => {
                     type={showPasswordText ? 'text' : 'password'}
                     required
                     autoFocus
-                    placeholder="Digite a senha..."
+                    placeholder="Digite a senha"
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-hidden dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPasswordText(!showPasswordText)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
 
-              {authError && (
-                <div className="rounded-md bg-red-50 p-2 text-xs font-medium text-red-800 dark:bg-red-950/60 dark:text-red-300">
-                  {authError}
-                </div>
-              )}
-
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAuthModal(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                  className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white hover:bg-blue-800"
                 >
                   Entrar
                 </button>
@@ -572,17 +613,46 @@ export const VidaEMinisterioView: React.FC = () => {
         </div>
       )}
 
-      {/* ================================================================= */}
-      {/* 6. MODAL DE EDIÇÃO / CRIAÇÃO DE SEMANAS (S-140-T)                */}
-      {/* ================================================================= */}
-      <S140TEditorModal
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO                              */}
+      {/* ------------------------------------------------------------- */}
+      {semanaParaExcluir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-300 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Confirmar Exclusão
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Tem certeza de que deseja excluir a programação desta semana? Esta ação não poderá ser desfeita.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSemanaParaExcluir(null)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarExclusao}
+                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE EDIÇÃO / CADASTRO DA PROGRAMAÇÃO                     */}
+      {/* ------------------------------------------------------------- */}
+      <VidaEMinisterioEditorModal
         isOpen={isEditorOpen}
         semana={semanaParaEditar}
-        onClose={() => {
-          setIsEditorOpen(false);
-          setSemanaParaEditar(null);
-        }}
-        onSave={handleSaveSemana}
+        onClose={() => setIsEditorOpen(false)}
+        onSave={handleSalvarSemana}
       />
     </div>
   );

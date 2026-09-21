@@ -25,6 +25,7 @@ export interface S140TVidaCristaParte {
 export interface S140TSemana {
   id: string;
   periodo: string; // Ex: "7-13 DE SETEMBRO"
+  dataReuniao?: string; // Ex: "10/09/2026" ou "Quinta-feira, 10 de Setembro"
   leituraBiblica: string; // Ex: "JEREMIAS 32-33"
   ehVisita?: boolean; // Se for semana de visita do superintendente
   dataReferencia: string; // YYYY-MM-DD para ordenação cronológica
@@ -41,6 +42,7 @@ export interface S140TSemana {
   discursoTesourosTempoMin?: number; // Padrão: 10
   discursoTesourosIrmao: string; // Ex: "Danilo C."
 
+  joiasEspirituaisTitulo?: string; // Tema das joias espirituais
   joiasEspirituaisIrmao: string; // Ex: "Hermes B."
   joiasEspirituaisTempoMin?: number; // Padrão: 10
 
