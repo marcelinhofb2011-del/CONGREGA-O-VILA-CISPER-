@@ -135,6 +135,10 @@ export const ESCALA_DESIGNACOES_CANONICA: EscalaDesignacaoItem[] = [
   { id: 'dez-9', mes: 'Dezembro 2026', mesChave: 'dezembro', dia: 'Quinta-Feira 31/12', indicador: 'Vanderlei / Leandro', microfone: 'Silvani / Rafael', leitor: '', audio: 'Kleber', video: 'Marcelo' },
 ];
 
+export const CANONICAL_DESIGNACOES_SAMPLE_IDS = new Set(
+  ESCALA_DESIGNACOES_CANONICA.map((i) => i.id)
+);
+
 export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DESIGNACOES);
@@ -143,13 +147,24 @@ export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
       return ESCALA_DESIGNACOES_CANONICA;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : ESCALA_DESIGNACOES_CANONICA;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // Se já existem registros reais importados pelo usuário, remove resíduos do template de exemplo
+      const temRegistrosReais = parsed.some((i) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(i.id));
+      if (temRegistrosReais) {
+        const limpos = parsed.filter((i) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(i.id));
+        if (limpos.length > 0) {
+          return limpos;
+        }
+      }
+      return parsed;
+    }
+    return ESCALA_DESIGNACOES_CANONICA;
   } catch {
     return ESCALA_DESIGNACOES_CANONICA;
   }
 }
 
-export function saveStoredEscalaItem(item: EscalaDesignacaoItem): { success: boolean; data?: EscalaDesignacaoItem[]; error?: string } {
+export async function saveStoredEscalaItem(item: EscalaDesignacaoItem): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string }> {
   try {
     const current = getStoredEscalaDesignacoes();
     const idx = current.findIndex((i) => i.id === item.id);
@@ -161,57 +176,64 @@ export function saveStoredEscalaItem(item: EscalaDesignacaoItem): { success: boo
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('designacoes-firebase-updated', { detail: updated }));
     // Sincroniza em tempo real com o banco de dados Firestore na nuvem
-    firebaseSync.saveAllDesignacoes(updated);
+    await firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function deleteStoredEscalaItem(id: string): { success: boolean; data?: EscalaDesignacaoItem[]; error?: string } {
+export async function deleteStoredEscalaItem(id: string): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string }> {
   try {
     const current = getStoredEscalaDesignacoes();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('designacoes-firebase-updated', { detail: updated }));
     // Sincroniza remoção em tempo real com o Firestore
-    firebaseSync.saveAllDesignacoes(updated);
+    await firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function saveBulkEscalaDesignacoes(
+export async function saveBulkEscalaDesignacoes(
   newItems: EscalaDesignacaoItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
   targetMonthKey?: string | string[]
-): { success: boolean; data?: EscalaDesignacaoItem[]; error?: string; count?: number } {
+): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string; count?: number }> {
   try {
     const current = getStoredEscalaDesignacoes();
+    // Ao importar dados reais, descarta dados de exemplo antigos do template
+    const cleanedCurrent = current.filter((item) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(item.id));
     let updated: EscalaDesignacaoItem[];
 
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
       const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
-      const filtered = current.filter((item) => !keys.has(item.mesChave));
+      const filtered = cleanedCurrent.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
       // Append / Mesclar: evitar duplicados pelo ID se já existirem
-      const existingIds = new Set(current.map((i) => i.id));
+      const existingIds = new Set(cleanedCurrent.map((i) => i.id));
       const filteredNew = newItems.map((item) => {
         if (existingIds.has(item.id)) {
           return { ...item, id: `desig-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` };
         }
         return item;
       });
-      updated = [...current, ...filteredNew];
+      updated = [...cleanedCurrent, ...filteredNew];
     }
 
+    // Salva localmente e emite evento imediato para a UI
     localStorage.setItem(STORAGE_KEY_DESIGNACOES, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('designacoes-firebase-updated', { detail: updated }));
+
     // Sincroniza em lote diretamente com o Firestore na nuvem
-    firebaseSync.saveAllDesignacoes(updated);
+    await firebaseSync.saveAllDesignacoes(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };

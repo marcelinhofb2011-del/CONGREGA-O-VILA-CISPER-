@@ -83,9 +83,18 @@ export const DiscursoPublicoView: React.FC = () => {
       }
     };
 
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'vila_cisper_discursos_2026' || e.key === 'vila_cisper_admin_auth') {
+        carregarDiscursos();
+        setIsAdmin(isAdminAuthenticated());
+      }
+    };
+
     window.addEventListener('discursos-firebase-updated', handleFirebaseUpdate);
+    window.addEventListener('storage', handleStorageChange);
     return () => {
       window.removeEventListener('discursos-firebase-updated', handleFirebaseUpdate);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 

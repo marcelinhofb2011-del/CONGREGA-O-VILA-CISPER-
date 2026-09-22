@@ -342,6 +342,10 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
   },
 ];
 
+export const CANONICAL_S140T_SAMPLE_IDS = new Set(
+  S140T_DADOS_PADRAO.map((i) => i.id)
+);
+
 export function getStoredS140TSemanas(): S140TSemana[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_S140T);
@@ -354,6 +358,13 @@ export function getStoredS140TSemanas(): S140TSemana[] {
     if (!Array.isArray(parsed) || parsed.length === 0) {
       localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(S140T_DADOS_PADRAO));
       return S140T_DADOS_PADRAO;
+    }
+    const temRegistrosReais = parsed.some((i) => !CANONICAL_S140T_SAMPLE_IDS.has(i.id));
+    if (temRegistrosReais) {
+      const limpos = parsed.filter((i) => !CANONICAL_S140T_SAMPLE_IDS.has(i.id));
+      if (limpos.length > 0) {
+        return limpos;
+      }
     }
     return parsed;
   } catch {
@@ -470,13 +481,15 @@ export function verificarDesignacaoIrmao(
   return campo.includes(proc) || proc.includes(campo);
 }
 
-export function saveBulkS140TSemanas(
+export async function saveBulkS140TSemanas(
   newWeeks: S140TSemana[],
   mode: 'append' | 'replace_month' | 'replace_all',
   targetMonthKeys?: string[]
-): { success: boolean; data?: S140TSemana[]; error?: string; count?: number } {
+): Promise<{ success: boolean; data?: S140TSemana[]; error?: string; count?: number }> {
   try {
     const current = getStoredS140TSemanas();
+    // Descarta dados de exemplo antigos do template ao importar dados reais
+    const cleanedCurrent = current.filter((item) => !CANONICAL_S140T_SAMPLE_IDS.has(item.id));
     let updated: S140TSemana[];
 
     if (mode === 'replace_all') {
@@ -484,11 +497,7 @@ export function saveBulkS140TSemanas(
     } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
       const keysSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
       // Filtra semanas que não pertencem aos meses que estão sendo substituídos
-      const filtered = current.filter((item) => {
-        // Se a data de referência YYYY-MM-DD contiver o mês
-        const matchData = item.dataReferencia?.substring(5, 7); // MM
-        const matchAno = item.dataReferencia?.substring(0, 4); // YYYY
-        // Também checa pelo período ou mês
+      const filtered = cleanedCurrent.filter((item) => {
         const itemPeriodo = (item.periodo || '').toLowerCase();
         return !Array.from(keysSet).some((key) => {
           return itemPeriodo.includes(key);
@@ -497,17 +506,13 @@ export function saveBulkS140TSemanas(
       updated = [...filtered, ...newWeeks];
     } else {
       // Append / Mesclar: evitar duplicados pelo ID ou dataReferencia
-      const existingRefDates = new Set(current.map((w) => w.dataReferencia));
+      const existingRefDates = new Set(cleanedCurrent.map((w) => w.dataReferencia));
       const filteredNew = newWeeks.map((item) => {
-        if (existingRefDates.has(item.dataReferencia)) {
-          // Substitui a que tiver mesma dataReferencia
-          return item;
-        }
         return item;
       });
       // Mescla atualizando as coincidentes e acrescentando as novas
       const map = new Map<string, S140TSemana>();
-      current.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      cleanedCurrent.forEach((w) => map.set(w.dataReferencia || w.id, w));
       newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
       updated = Array.from(map.values());
     }
@@ -516,8 +521,9 @@ export function saveBulkS140TSemanas(
     updated.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
 
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
     if ((firebaseSync as any).saveAllS140T) {
-      (firebaseSync as any).saveAllS140T(updated);
+      await (firebaseSync as any).saveAllS140T(updated);
     }
     return { success: true, data: updated, count: newWeeks.length };
   } catch (err: any) {

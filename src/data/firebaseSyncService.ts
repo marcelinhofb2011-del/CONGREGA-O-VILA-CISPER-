@@ -292,7 +292,7 @@ class FirebaseSyncManager {
 
         const items: unknown[] = [];
         snapshot.forEach((d) => {
-          items.push(d.data());
+          items.push({ id: d.id, ...d.data() });
         });
 
         localStorage.setItem(localStorageKey, JSON.stringify(items));
@@ -308,7 +308,7 @@ class FirebaseSyncManager {
 
   /**
    * Salva um lote inteiro de itens em uma coleção do Firestore,
-   * removendo documentos órfãos e atualizando localStorage e UI simultaneamente.
+   * removendo documentos órfãos e atualizando localStorage e UI simultaneamente em tempo real.
    */
   public async saveBatchCollection(
     collectionName: string,
@@ -326,15 +326,12 @@ class FirebaseSyncManager {
       const snapshot = await getDocs(colRef);
       const currentIds = new Set(items.map((it) => String(it.id)));
 
-      // Firestore suporta até 500 operações por batch
-      const batch = writeBatch(db);
-      let opCount = 0;
+      const operations: Array<(b: any) => void> = [];
 
       // Deleta documentos antigos que não estão mais no novo conjunto
       snapshot.forEach((docSnap) => {
         if (!currentIds.has(docSnap.id)) {
-          batch.delete(docSnap.ref);
-          opCount++;
+          operations.push((b) => b.delete(docSnap.ref));
         }
       });
 
@@ -343,11 +340,15 @@ class FirebaseSyncManager {
         const item = items[i];
         const id = String(item.id || `item-${Date.now()}-${i}`);
         const docRef = doc(db, collectionName, id);
-        batch.set(docRef, { ...item, atualizadoEm: new Date().toISOString() });
-        opCount++;
+        operations.push((b) => b.set(docRef, { ...item, id, atualizadoEm: new Date().toISOString() }));
       }
 
-      if (opCount > 0) {
+      // Executa em lotes seguros de 400 operações para evitar limites do Firestore
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
+        const chunk = operations.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((op) => op(batch));
         await batch.commit();
       }
 

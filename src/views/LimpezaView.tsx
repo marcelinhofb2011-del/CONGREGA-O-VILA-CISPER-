@@ -80,9 +80,34 @@ export const LimpezaView: React.FC = () => {
 
   const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
-  useEffect(() => {
+  const carregarDados = () => {
     setEscalas(getStoredLimpezaEscalas());
     setIsAdmin(isAdminAuthenticated());
+  };
+
+  useEffect(() => {
+    carregarDados();
+
+    const handleUpdate = () => {
+      carregarDados();
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === 'vila_cisper_limpeza_escalas_2026' ||
+        e.key === 'vila_cisper_admin_auth'
+      ) {
+        carregarDados();
+      }
+    };
+
+    window.addEventListener('limpeza-firebase-updated', handleUpdate);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('limpeza-firebase-updated', handleUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   // Meses únicos

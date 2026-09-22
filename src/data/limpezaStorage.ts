@@ -240,6 +240,10 @@ export const LIMPEZA_ESCALAS_CANONICAS: LimpezaEscalaItem[] = [
   { id: 'limp-dez-5', mes: 'Dezembro', mesChave: 'dezembro', dias: '31', diasSemana: 'Quinta-Feira e Domingo', grupo: 'GRUPO 1', responsaveis: 'SAMUEL / GEOVANE / HUGO' },
 ];
 
+export const CANONICAL_LIMPEZA_SAMPLE_IDS = new Set(
+  LIMPEZA_ESCALAS_CANONICAS.map((i) => i.id)
+);
+
 export function getStoredLimpezaEscalas(): LimpezaEscalaItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_LIMPEZA_ESCALAS);
@@ -248,7 +252,17 @@ export function getStoredLimpezaEscalas(): LimpezaEscalaItem[] {
       return LIMPEZA_ESCALAS_CANONICAS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : LIMPEZA_ESCALAS_CANONICAS;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const temRegistrosReais = parsed.some((i) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(i.id));
+      if (temRegistrosReais) {
+        const limpos = parsed.filter((i) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(i.id));
+        if (limpos.length > 0) {
+          return limpos;
+        }
+      }
+      return parsed;
+    }
+    return LIMPEZA_ESCALAS_CANONICAS;
   } catch {
     return LIMPEZA_ESCALAS_CANONICAS;
   }
@@ -256,7 +270,7 @@ export function getStoredLimpezaEscalas(): LimpezaEscalaItem[] {
 
 export const getStoredLimpezaEscala = getStoredLimpezaEscalas;
 
-export function saveStoredLimpezaEscala(item: LimpezaEscalaItem): { success: boolean; data?: LimpezaEscalaItem[]; error?: string } {
+export async function saveStoredLimpezaEscala(item: LimpezaEscalaItem): Promise<{ success: boolean; data?: LimpezaEscalaItem[]; error?: string }> {
   try {
     const current = getStoredLimpezaEscalas();
     const idx = current.findIndex((i) => i.id === item.id);
@@ -268,53 +282,58 @@ export function saveStoredLimpezaEscala(item: LimpezaEscalaItem): { success: boo
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
-    firebaseSync.saveAllLimpeza(updated);
+    window.dispatchEvent(new CustomEvent('limpeza-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function deleteStoredLimpezaEscala(id: string): { success: boolean; data?: LimpezaEscalaItem[]; error?: string } {
+export async function deleteStoredLimpezaEscala(id: string): Promise<{ success: boolean; data?: LimpezaEscalaItem[]; error?: string }> {
   try {
     const current = getStoredLimpezaEscalas();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
-    firebaseSync.saveAllLimpeza(updated);
+    window.dispatchEvent(new CustomEvent('limpeza-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function saveBulkLimpezaEscala(
+export async function saveBulkLimpezaEscala(
   newItems: LimpezaEscalaItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
   targetMonthKey?: string | string[]
-): { success: boolean; data?: LimpezaEscalaItem[]; error?: string; count?: number } {
+): Promise<{ success: boolean; data?: LimpezaEscalaItem[]; error?: string; count?: number }> {
   try {
     const current = getStoredLimpezaEscalas();
+    // Ao importar dados reais, descarta dados de exemplo antigos do template
+    const cleanedCurrent = current.filter((item) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(item.id));
     let updated: LimpezaEscalaItem[];
 
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
       const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
-      const filtered = current.filter((item) => !keys.has(item.mesChave));
+      const filtered = cleanedCurrent.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
-      const existingIds = new Set(current.map((i) => i.id));
+      const existingIds = new Set(cleanedCurrent.map((i) => i.id));
       const filteredNew = newItems.map((item) => {
         if (existingIds.has(item.id)) {
           return { ...item, id: `limp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` };
         }
         return item;
       });
-      updated = [...current, ...filteredNew];
+      updated = [...cleanedCurrent, ...filteredNew];
     }
 
     localStorage.setItem(STORAGE_KEY_LIMPEZA_ESCALAS, JSON.stringify(updated));
-    firebaseSync.saveAllLimpeza(updated);
+    window.dispatchEvent(new CustomEvent('limpeza-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllLimpeza(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };

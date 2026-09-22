@@ -118,6 +118,10 @@ export const IRMAOS_DISCURSO_ROSTER = [
   'Airton',
 ];
 
+export const CANONICAL_DISCURSOS_SAMPLE_IDS = new Set(
+  DISCURSOS_CANONICOS.map((i) => i.id)
+);
+
 export function getStoredDiscursosBiblicos(): DiscursoBiblicoItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DISCURSOS);
@@ -126,13 +130,23 @@ export function getStoredDiscursosBiblicos(): DiscursoBiblicoItem[] {
       return DISCURSOS_CANONICOS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DISCURSOS_CANONICOS;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const temRegistrosReais = parsed.some((i) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(i.id));
+      if (temRegistrosReais) {
+        const limpos = parsed.filter((i) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(i.id));
+        if (limpos.length > 0) {
+          return limpos;
+        }
+      }
+      return parsed;
+    }
+    return DISCURSOS_CANONICOS;
   } catch {
     return DISCURSOS_CANONICOS;
   }
 }
 
-export function saveStoredDiscursoBiblico(item: DiscursoBiblicoItem): { success: boolean; data?: DiscursoBiblicoItem[]; error?: string } {
+export async function saveStoredDiscursoBiblico(item: DiscursoBiblicoItem): Promise<{ success: boolean; data?: DiscursoBiblicoItem[]; error?: string }> {
   try {
     const current = getStoredDiscursosBiblicos();
     const idx = current.findIndex((d) => d.id === item.id);
@@ -144,49 +158,57 @@ export function saveStoredDiscursoBiblico(item: DiscursoBiblicoItem): { success:
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
-    firebaseSync.saveAllDiscursos(updated);
+    window.dispatchEvent(new CustomEvent('discursos-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function deleteStoredDiscursoBiblico(id: string): { success: boolean; data?: DiscursoBiblicoItem[]; error?: string } {
+export async function deleteStoredDiscursoBiblico(id: string): Promise<{ success: boolean; data?: DiscursoBiblicoItem[]; error?: string }> {
   try {
     const current = getStoredDiscursosBiblicos();
     const updated = current.filter((d) => d.id !== id);
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
-    firebaseSync.saveAllDiscursos(updated);
+    window.dispatchEvent(new CustomEvent('discursos-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export function saveBulkDiscursosBiblicos(
+export async function saveBulkDiscursosBiblicos(
   newItems: DiscursoBiblicoItem[],
   mode: 'append' | 'replace_month' | 'replace_all',
   targetMonth?: string | string[]
-): { success: boolean; data?: DiscursoBiblicoItem[]; error?: string; count?: number } {
+): Promise<{ success: boolean; data?: DiscursoBiblicoItem[]; error?: string; count?: number }> {
   try {
     const current = getStoredDiscursosBiblicos();
+    // Descarta dados de exemplo antigos do template ao importar dados reais
+    const cleanedCurrent = current.filter((item) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(item.id));
     let updated: DiscursoBiblicoItem[];
 
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonth) {
       const monthList = Array.isArray(targetMonth) ? targetMonth.map((m) => m.toLowerCase()) : [targetMonth.toLowerCase()];
-      const filtered = current.filter((item) => !monthList.some((m) => item.mes.toLowerCase().includes(m) || m.includes(item.mes.toLowerCase())));
+      const filtered = cleanedCurrent.filter((item) => {
+        const itemMes = (item.mes || '').toLowerCase();
+        return !monthList.some((m) => itemMes.includes(m) || m.includes(itemMes));
+      });
       updated = [...filtered, ...newItems];
     } else {
       const map = new Map<string, DiscursoBiblicoItem>();
-      current.forEach((it) => map.set(it.data.trim(), it));
+      cleanedCurrent.forEach((it) => map.set(it.data.trim(), it));
       newItems.forEach((it) => map.set(it.data.trim(), it));
       updated = Array.from(map.values());
     }
 
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));
-    firebaseSync.saveAllDiscursos(updated);
+    window.dispatchEvent(new CustomEvent('discursos-firebase-updated', { detail: updated }));
+    await firebaseSync.saveAllDiscursos(updated);
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
     return { success: false, error: err.message };

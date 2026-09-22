@@ -7,6 +7,7 @@ import {
   X,
   Calendar,
   ChevronRight,
+  ChevronDown,
   ArrowLeft,
   Users,
   Info,
@@ -107,8 +108,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   modulo,
   onImportadoComSucesso,
 }) => {
-  // Passos do Fluxo de Importação: 1 = Arquivo, 2 = Meses, 3 = Conferência / Resumo
-  const [passo, setPasso] = useState<1 | 2 | 3>(1);
+  // Passos do Fluxo de Importação: 1 = Escolher Arquivo, 2 = Escolher Meses, 3 = Conferir, 4 = Confirmar
+  const [passo, setPasso] = useState<1 | 2 | 3 | 4>(1);
 
   // Arquivo e Dados Brutos
   const [nomeArquivo, setNomeArquivo] = useState<string>('');
@@ -121,12 +122,24 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   const [mesesDetectados, setMesesDetectados] = useState<string[]>([]);
   const [mesesSelecionados, setMesesSelecionados] = useState<string[]>([]);
 
-  // Opção para registros existentes (Evitar duplicação)
+  // Modais de apoio
+  const [showProblemasModal, setShowProblemasModal] = useState<boolean>(false);
+  const [showOpcoesAvancadas, setShowOpcoesAvancadas] = useState<boolean>(false);
+
+  // Opção para registros existentes (Evitar duplicação - dentro de Opções avançadas)
   const [modoSubstituicao, setModoSubstituicao] = useState<'substituir' | 'apenas_novos'>('substituir');
 
   // Estado de gravação
   const [isGravando, setIsGravando] = useState<boolean>(false);
   const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
+
+  // Helper para formatar lista de meses em linguagem natural (Ex: "Outubro e Novembro")
+  const formatarMesesTexto = (meses: string[]): string => {
+    if (meses.length === 0) return 'Nenhum mês';
+    if (meses.length === 1) return meses[0];
+    if (meses.length === 2) return `${meses[0]} e ${meses[1]}`;
+    return `${meses.slice(0, -1).join(', ')} e ${meses[meses.length - 1]}`;
+  };
 
   // Títulos e metadados por departamento
   const metaDepartamento = useMemo(() => {
@@ -275,7 +288,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
 
       setMesesDetectados(listaMeses);
       setMesesSelecionados(listaMeses); // Por padrão, seleciona todos os encontrados
-      setPasso(2); // Avança para seleção dos meses
+      setPasso(1); // Permanece no passo 1 mostrando "Planilha carregada" e o botão "CONTINUAR"
     } catch (err: any) {
       setErroArquivo(err.message || 'Erro ao carregar o arquivo da planilha.');
     } finally {
@@ -759,31 +772,31 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       const chavesMeses = mesesSelecionados.map(normalizar);
 
       if (modulo === 'designacoes') {
-        saveBulkEscalaDesignacoes(
+        await saveBulkEscalaDesignacoes(
           itensFinais as EscalaDesignacaoItem[],
           modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
           chavesMeses
         );
       } else if (modulo === 'discursos') {
-        saveBulkDiscursosBiblicos(
+        await saveBulkDiscursosBiblicos(
           itensFinais as DiscursoBiblicoItem[],
           modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
           mesesSelecionados
         );
       } else if (modulo === 'campo') {
-        saveBulkCampoProgramacao(
+        await saveBulkCampoProgramacao(
           itensFinais as CampoProgramacao[],
           modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
           chavesMeses
         );
       } else if (modulo === 'limpeza') {
-        saveBulkLimpezaEscala(
+        await saveBulkLimpezaEscala(
           itensFinais as LimpezaEscalaItem[],
           modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
           chavesMeses
         );
       } else if (modulo === 'vida-ministerio') {
-        saveBulkS140TSemanas(
+        await saveBulkS140TSemanas(
           itensFinais as S140TSemana[],
           modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
           chavesMeses
@@ -805,500 +818,450 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  const handleFecharModal = () => {
+    setPasso(1);
+    setNomeArquivo('');
+    setLinhasBrutas([]);
+    setErroArquivo('');
+    setMesesDetectados([]);
+    setMesesSelecionados([]);
+    setShowProblemasModal(false);
+    setShowOpcoesAvancadas(false);
+    onClose();
+  };
 
-  const IconeDept = metaDepartamento.icone;
+  if (!isOpen) return null;
 
   return (
     <div
       id="modal-importar-planilha-departamento"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="relative w-full max-w-3xl rounded-3xl bg-white shadow-2xl border border-slate-200 dark:bg-slate-900 dark:border-slate-800 flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-200 dark:bg-slate-900 dark:border-slate-800 flex flex-col overflow-hidden">
         {/* Cabeçalho do Modal */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Modo Responsável
-                </span>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  Importação Dedicada
-                </span>
-              </div>
-              <h2 className="text-base sm:text-lg font-black uppercase text-slate-900 dark:text-white">
-                Importar Planilha — {metaDepartamento.titulo}
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                Modo Responsável
+              </span>
+              <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 dark:text-white">
+                IMPORTAR PROGRAMAÇÃO — {metaDepartamento.titulo.toUpperCase()}
               </h2>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleFecharModal}
             className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Indicador de Passos */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-6 py-2.5 text-xs font-bold text-slate-500 dark:border-slate-800/80 dark:bg-slate-900/60 shrink-0">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-black ${
-                passo === 1
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              1
-            </span>
-            <span className={passo === 1 ? 'font-extrabold text-blue-700 dark:text-blue-300' : ''}>
-              Carregar Arquivo
-            </span>
+        {/* Indicador de 4 Etapas */}
+        <div className="grid grid-cols-4 border-b border-slate-100 bg-slate-50/70 px-4 py-2 text-center text-[11px] font-bold text-slate-500 dark:border-slate-800/80 dark:bg-slate-900/60 shrink-0">
+          <div className={`py-1 ${passo === 1 ? 'text-blue-700 dark:text-blue-400 font-extrabold border-b-2 border-blue-600' : ''}`}>
+            1. Arquivo
           </div>
-
-          <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-black ${
-                passo === 2
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              2
-            </span>
-            <span className={passo === 2 ? 'font-extrabold text-blue-700 dark:text-blue-300' : ''}>
-              Seleção dos Meses
-            </span>
+          <div className={`py-1 ${passo === 2 ? 'text-blue-700 dark:text-blue-400 font-extrabold border-b-2 border-blue-600' : ''}`}>
+            2. Meses
           </div>
-
-          <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-black ${
-                passo === 3
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              3
-            </span>
-            <span className={passo === 3 ? 'font-extrabold text-blue-700 dark:text-blue-300' : ''}>
-              Conferência & Confirmação
-            </span>
+          <div className={`py-1 ${passo === 3 ? 'text-blue-700 dark:text-blue-400 font-extrabold border-b-2 border-blue-600' : ''}`}>
+            3. Conferir
+          </div>
+          <div className={`py-1 ${passo === 4 ? 'text-blue-700 dark:text-blue-400 font-extrabold border-b-2 border-blue-600' : ''}`}>
+            4. Confirmar
           </div>
         </div>
 
         {/* Mensagem de Sucesso Flutuante */}
         {sucessoMsg && (
-          <div className="p-4 bg-emerald-500 text-white text-center font-bold text-sm flex items-center justify-center gap-2">
+          <div className="p-4 bg-emerald-600 text-white text-center font-bold text-sm flex items-center justify-center gap-2">
             <CheckCircle2 className="h-5 w-5" />
             <span>{sucessoMsg}</span>
           </div>
         )}
 
-        {/* Corpo com Scroll */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        {/* Corpo do Modal */}
+        <div className="p-5 sm:p-6 space-y-5">
           {/* =============================================================== */}
-          {/* PASSO 1: CARREGAR ARQUIVO                                        */}
+          {/* ETAPA 1: ESCOLHER ARQUIVO                                        */}
           {/* =============================================================== */}
           {passo === 1 && (
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                <p className="font-bold">
-                  Importação exclusiva para o departamento de {metaDepartamento.titulo}.
-                </p>
-                <p className="mt-1 text-slate-600 dark:text-slate-400">
-                  Carregue a planilha trimestral preparada no Excel (.xlsx, .xls) ou em formato (.csv). O sistema irá
-                  identificar automaticamente os meses presentes e estruturar as programações.
-                </p>
-              </div>
+            <div className="space-y-4">
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".xlsx, .xls, .csv"
+                onChange={(e) => e.target.files && handleCarregarArquivo(e.target.files[0])}
+                className="hidden"
+              />
 
-              {/* Área de Drag & Drop */}
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleFileDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800/40"
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept=".xlsx, .xls, .csv"
-                  onChange={(e) => e.target.files && handleCarregarArquivo(e.target.files[0])}
-                  className="hidden"
-                />
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 dark:bg-slate-800 dark:border-slate-700 mb-3">
-                  <Upload className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              {linhasBrutas.length > 0 && nomeArquivo ? (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                    <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 mb-3">
+                      <CheckCircle2 className="h-6 w-6" />
+                    </div>
+                    <p className="text-base font-extrabold text-emerald-800 dark:text-emerald-300">
+                      ✓ Planilha carregada
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 font-medium truncate max-w-xs mx-auto">
+                      {nomeArquivo}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinhasBrutas([]);
+                        setNomeArquivo('');
+                        setMesesDetectados([]);
+                        setMesesSelecionados([]);
+                        fileInputRef.current?.click();
+                      }}
+                      className="mt-3 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
+                    >
+                      Trocar planilha
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="btn-continuar-etapa-meses"
+                    onClick={() => setPasso(2)}
+                    className="w-full rounded-2xl bg-blue-700 py-3.5 text-sm font-extrabold text-white shadow-md hover:bg-blue-800 active:scale-[0.99] transition"
+                  >
+                    CONTINUAR
+                  </button>
                 </div>
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  Clique para selecionar a planilha ou arraste o arquivo aqui
-                </h4>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Formatos aceitos: Microsoft Excel (.xlsx, .xls) ou Texto delimitado (.csv)
-                </p>
-                {isProcessandoArquivo && (
-                  <p className="mt-3 text-xs font-bold text-blue-600 animate-pulse">
-                    Lendo arquivo e identificando os meses...
-                  </p>
-                )}
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleFileDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800/40"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 mb-3">
+                      <Upload className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      Selecionar planilha
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Arquivos Excel (.xlsx, .xls) ou .csv
+                    </p>
+                    {isProcessandoArquivo && (
+                      <p className="mt-3 text-xs font-bold text-blue-600 animate-pulse">
+                        Carregando planilha...
+                      </p>
+                    )}
+                  </div>
 
-              {erroArquivo && (
-                <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-3.5 text-xs font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{erroArquivo}</span>
+                  {erroArquivo && (
+                    <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span>{erroArquivo}</span>
+                    </div>
+                  )}
                 </div>
               )}
-
-              {/* Estrutura esperada de colunas */}
-              <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <h5 className="text-xs font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-2">
-                  Colunas identificadas para {metaDepartamento.titulo}:
-                </h5>
-                <div className="flex flex-wrap gap-2">
-                  {metaDepartamento.camposEsperados.map((campo) => (
-                    <span
-                      key={campo}
-                      className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
-                    >
-                      {campo}
-                    </span>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
           {/* =============================================================== */}
-          {/* PASSO 2: SELEÇÃO DOS MESES                                       */}
+          {/* ETAPA 2: ESCOLHER MESES                                          */}
           {/* =============================================================== */}
           {passo === 2 && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
-                <div>
-                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-                    2. Seleção dos Meses para Importação
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Arquivo carregado: <span className="font-semibold text-slate-800 dark:text-slate-200">{nomeArquivo}</span>
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Meses encontrados
+                </span>
                 <button
                   type="button"
-                  onClick={() => setPasso(1)}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 dark:text-slate-400"
+                  onClick={handleToggleTodosMeses}
+                  className="text-xs font-bold text-blue-700 hover:underline dark:text-blue-400"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Trocar arquivo
+                  {mesesSelecionados.length === mesesDetectados.length ? 'Desmarcar todos' : 'Selecionar todos'}
                 </button>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/60">
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-slate-800">
-                  <span className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                    Trimestre / Meses Encontrados na Planilha
-                  </span>
-
-                  <label className="flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={mesesSelecionados.length === mesesDetectados.length && mesesDetectados.length > 0}
-                      onChange={handleToggleTodosMeses}
-                      className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                    />
-                    <span>Selecionar todos</span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {mesesDetectados.map((mes) => {
-                    const isChecked = mesesSelecionados.includes(mes);
-                    return (
-                      <label
-                        key={mes}
-                        className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition ${
-                          isChecked
-                            ? 'border-blue-600 bg-blue-50/70 dark:border-blue-500 dark:bg-blue-950/40 text-blue-950 dark:text-blue-100 font-bold'
-                            : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleMes(mes)}
-                            className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                          />
-                          <span className="text-sm font-extrabold">{mes}</span>
-                        </div>
-
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                          {isChecked ? 'Incluído' : 'Ignorado'}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
+              <div className="space-y-2">
+                {mesesDetectados.map((mes) => {
+                  const isChecked = mesesSelecionados.includes(mes);
+                  return (
+                    <label
+                      key={mes}
+                      className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition ${
+                        isChecked
+                          ? 'border-blue-600 bg-blue-50/50 dark:border-blue-500 dark:bg-blue-950/30 text-blue-950 dark:text-blue-100 font-bold'
+                          : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleMes(mes)}
+                        className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                      />
+                      <span className="text-sm">{mes}</span>
+                    </label>
+                  );
+                })}
               </div>
 
-              {mesesSelecionados.length === 0 ? (
-                <div className="flex items-center gap-2 rounded-xl bg-amber-50 p-3.5 text-xs font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>Selecione pelo menos um mês para prosseguir para a conferência.</span>
-                </div>
-              ) : (
-                <div className="rounded-xl bg-blue-50/60 p-3 text-xs text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-bold">Meses selecionados para importação:</span>{' '}
-                  {mesesSelecionados.join(', ')}. Os meses não marcados serão completamente ignorados.
-                </div>
-              )}
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 pt-1">
+                {mesesSelecionados.length} {mesesSelecionados.length === 1 ? 'mês selecionado' : 'meses selecionados'}
+              </p>
+
+              <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPasso(1)}
+                  className="flex-1 rounded-xl border border-slate-300 py-3 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                >
+                  VOLTAR
+                </button>
+                <button
+                  type="button"
+                  id="btn-continuar-etapa-conferir"
+                  onClick={() => setPasso(3)}
+                  disabled={mesesSelecionados.length === 0}
+                  className="flex-1 rounded-xl bg-blue-700 py-3 text-xs sm:text-sm font-extrabold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 transition"
+                >
+                  CONTINUAR
+                </button>
+              </div>
             </div>
           )}
 
           {/* =============================================================== */}
-          {/* PASSO 3: RESUMO ANTES DA IMPORTAÇÃO & VALIDAÇÃO AUTOMÁTICA        */}
+          {/* ETAPA 3: CONFERIR                                                */}
           {/* =============================================================== */}
           {passo === 3 && (
-            <div className="space-y-6">
-              {/* Card de Resumo Canônico solicitado na especificação */}
-              <div className="rounded-2xl border-2 border-blue-600 bg-blue-50/40 p-5 dark:border-blue-500 dark:bg-blue-950/30">
-                <div className="flex items-center justify-between border-b border-blue-200/80 pb-3 dark:border-blue-900/60">
-                  <h3 className="text-sm sm:text-base font-black uppercase text-blue-950 dark:text-blue-100">
-                    IMPORTAÇÃO — {metaDepartamento.titulo.toUpperCase()}
-                  </h3>
-                  <span className="text-xs font-extrabold bg-blue-600 text-white px-2.5 py-1 rounded-full">
-                    Total: {registrosProcessados.length} registros
-                  </span>
-                </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60 space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  RESUMO DA IMPORTAÇÃO
+                </h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 text-xs sm:text-sm">
-                  <div>
-                    <h5 className="font-extrabold text-slate-700 dark:text-slate-300 mb-1">
-                      Meses selecionados:
-                    </h5>
-                    <ul className="space-y-1 font-semibold text-slate-900 dark:text-white">
-                      {mesesSelecionados.map((m) => (
-                        <li key={m} className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-                          <span>{m}</span>
-                        </li>
-                      ))}
-                    </ul>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Departamento:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {metaDepartamento.titulo}
+                    </span>
                   </div>
-
-                  <div>
-                    <h5 className="font-extrabold text-slate-700 dark:text-slate-300 mb-1">
-                      Registros encontrados:
-                    </h5>
-                    <ul className="space-y-1 font-semibold text-slate-900 dark:text-white">
-                      {mesesSelecionados.map((m) => (
-                        <li key={m} className="flex items-center justify-between">
-                          <span>{m}:</span>
-                          <span className="font-extrabold text-blue-700 dark:text-blue-300">
-                            {contagemPorMes[m] || 0} registros
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Meses selecionados:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {formatarMesesTexto(mesesSelecionados)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Registros encontrados:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {registrosProcessados.length}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Bloco de Inconsistências / Alertas da Validação Automática */}
-              {inconsistencias.length > 0 && (
-                <div className="rounded-2xl border-2 border-amber-500 bg-amber-50/80 p-5 dark:border-amber-600 dark:bg-amber-950/40">
-                  <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-black text-sm">
-                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-                    <span>ATENÇÃO — EXISTEM REGISTROS QUE PRECISAM SER CONFERIDOS</span>
-                  </div>
-                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                    O sistema realizou a validação de datas, calendário e cadastro de irmãos. Revise os pontos abaixo
-                    antes de confirmar:
+              {/* Status da Validação */}
+              {inconsistencias.length === 0 ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                  <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>✓ Dados prontos para importar</span>
                   </p>
-
-                  <div className="mt-3 max-h-48 overflow-y-auto space-y-2 pr-1">
-                    {inconsistencias.map((inc, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg bg-white/90 p-2.5 text-xs border border-amber-200 text-slate-800 dark:bg-slate-900 dark:border-amber-800/80 dark:text-slate-200"
-                      >
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="text-amber-800 dark:text-amber-400">
-                            {inc.mes} &bull; Data {inc.data} ({inc.campo})
-                          </span>
-                          <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                            {inc.gravidade}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-slate-600 dark:text-slate-400">{inc.motivo}</p>
-                      </div>
-                    ))}
-                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-center dark:border-amber-900/60 dark:bg-amber-950/30 space-y-2">
+                  <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center justify-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>⚠ {inconsistencias.length} {inconsistencias.length === 1 ? 'item precisa' : 'itens precisam'} de atenção</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowProblemasModal(true)}
+                    className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-900 dark:text-amber-200 underline hover:opacity-80"
+                  >
+                    VER PROBLEMAS
+                  </button>
                 </div>
               )}
 
-              {/* Tratamento de Registros Existentes (Evitar Duplicação) */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-800 dark:text-slate-200">
-                  Prevenção de Duplicação e Registros Existentes
-                </h4>
-                {conflitosExistentes > 0 ? (
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400 font-semibold">
-                    Existem {conflitosExistentes} registros já cadastrados no aplicativo para os meses selecionados.
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Nenhum conflito direto detectado com os meses selecionados.
-                  </p>
-                )}
+              <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPasso(2)}
+                  className="flex-1 rounded-xl border border-slate-300 py-3 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                >
+                  VOLTAR
+                </button>
+                <button
+                  type="button"
+                  id="btn-continuar-etapa-confirmar"
+                  onClick={() => setPasso(4)}
+                  disabled={registrosProcessados.length === 0}
+                  className="flex-1 rounded-xl bg-blue-700 py-3 text-xs sm:text-sm font-extrabold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 transition"
+                >
+                  CONTINUAR
+                </button>
+              </div>
+            </div>
+          )}
 
-                <div className="mt-3 space-y-2">
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="modoSubstituicao"
-                      value="substituir"
-                      checked={modoSubstituicao === 'substituir'}
-                      onChange={() => setModoSubstituicao('substituir')}
-                      className="text-blue-600"
-                    />
-                    <span>Atualizar / substituir programações dos meses selecionados (Recomendado)</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="modoSubstituicao"
-                      value="apenas_novos"
-                      checked={modoSubstituicao === 'apenas_novos'}
-                      onChange={() => setModoSubstituicao('apenas_novos')}
-                      className="text-blue-600"
-                    />
-                    <span>Adicionar apenas novas datas sem alterar os registros existentes</span>
-                  </label>
+          {/* =============================================================== */}
+          {/* ETAPA 4: CONFIRMAR                                               */}
+          {/* =============================================================== */}
+          {passo === 4 && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60 space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  PRONTO PARA IMPORTAR
+                </h4>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Departamento:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {metaDepartamento.titulo}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Período:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {formatarMesesTexto(mesesSelecionados)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Total:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">
+                      {registrosProcessados.length} registros
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Lista Organizada dos Dados para Prévia / Conferência */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    Prévia dos Registros Identificados ({registrosProcessados.length})
-                  </h4>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    Confira os dados antes de gravar no aplicativo
-                  </span>
-                </div>
+              {/* Opções avançadas (Duplicações / Substituição) */}
+              <div className="border border-slate-200 rounded-xl dark:border-slate-800 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowOpcoesAvancadas((prev) => !prev)}
+                  className="w-full flex items-center justify-between p-3 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+                >
+                  <span>Opções avançadas</span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showOpcoesAvancadas ? 'rotate-180' : ''}`} />
+                </button>
+                {showOpcoesAvancadas && (
+                  <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/40 space-y-2 text-xs">
+                    <p className="font-bold text-slate-700 dark:text-slate-300">
+                      Tratamento de dados existentes:
+                    </p>
+                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                      <input
+                        type="radio"
+                        name="substituicao"
+                        value="substituir"
+                        checked={modoSubstituicao === 'substituir'}
+                        onChange={() => setModoSubstituicao('substituir')}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Substituir programações dos meses selecionados (Recomendado)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                      <input
+                        type="radio"
+                        name="substituicao"
+                        value="apenas_novos"
+                        checked={modoSubstituicao === 'apenas_novos'}
+                        onChange={() => setModoSubstituicao('apenas_novos')}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Adicionar mantendo as existentes (apenas novos registros)</span>
+                    </label>
+                  </div>
+                )}
+              </div>
 
-                <div className="max-h-64 overflow-y-auto space-y-2.5 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                  {registrosProcessados.map((reg, idx) => (
-                    <div
-                      key={reg.idTemp}
-                      className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/60"
-                    >
-                      <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white border-b border-slate-200/60 pb-1.5 mb-2 dark:border-slate-700">
-                        <span className="text-blue-700 dark:text-blue-300 font-black">
-                          {reg.dadosFormatados['Reunião'] || reg.dadosFormatados['Data'] || reg.data}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                          {reg.mes}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
-                        {Object.entries(reg.dadosFormatados)
-                          .filter(([chave]) => chave !== 'Reunião' && chave !== 'Data')
-                          .map(([chave, val]) => (
-                            <div key={chave} className="flex items-baseline gap-1.5">
-                              <span className="font-extrabold text-slate-500 dark:text-slate-400">
-                                {chave}:
-                              </span>
-                              <span className="font-bold text-slate-900 dark:text-white">{val}</span>
-                            </div>
-                          ))}
-                      </div>
-
-                      {reg.avisos.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {reg.avisos.map((aviso, aIdx) => (
-                            <span
-                              key={aIdx}
-                              className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                            >
-                              {aviso}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  id="btn-cancelar-importacao-planilha"
+                  onClick={handleFecharModal}
+                  disabled={isGravando}
+                  className="flex-1 rounded-xl border border-slate-300 py-3 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirmar-importar-agora"
+                  onClick={handleConfirmarImportacao}
+                  disabled={isGravando || registrosProcessados.length === 0}
+                  className="flex-1 rounded-xl bg-emerald-600 py-3 text-xs sm:text-sm font-black uppercase text-white shadow-md hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 transition"
+                >
+                  {isGravando ? 'IMPORTANDO...' : 'IMPORTAR AGORA'}
+                </button>
               </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Rodapé com Botões de Ação */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900 shrink-0">
-          <div>
-            {passo > 1 && (
+      {/* Modal / Diálogo para "VER PROBLEMAS" */}
+      {showProblemasModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 dark:bg-slate-900 dark:border-slate-800 space-y-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                <h4 className="text-sm font-black uppercase text-slate-900 dark:text-white">
+                  Itens que precisam de atenção ({inconsistencias.length})
+                </h4>
+              </div>
               <button
                 type="button"
-                onClick={() => setPasso((prev) => (prev === 3 ? 2 : 1))}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                onClick={() => setShowProblemasModal(false)}
+                className="rounded-lg p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Voltar</span>
+                <X className="h-5 w-5" />
               </button>
-            )}
-          </div>
+            </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="overflow-y-auto space-y-2 flex-1 pr-1">
+              {inconsistencias.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-amber-200 bg-amber-50/50 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200 space-y-1"
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span>{item.data || item.mes}</span>
+                    <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-amber-200/60 dark:bg-amber-900/60">
+                      {item.campo}
+                    </span>
+                  </div>
+                  <p className="text-slate-700 dark:text-slate-300">{item.motivo}</p>
+                </div>
+              ))}
+            </div>
+
             <button
               type="button"
-              id="btn-cancelar-importacao-planilha"
-              onClick={onClose}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+              onClick={() => setShowProblemasModal(false)}
+              className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-white hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600"
             >
-              CANCELAR
+              FECHAR
             </button>
-
-            {passo === 2 && (
-              <button
-                type="button"
-                id="btn-avancar-conferencia-planilha"
-                onClick={() => setPasso(3)}
-                disabled={mesesSelecionados.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 transition"
-              >
-                <span>Avançar para Conferência</span>
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            )}
-
-            {passo === 3 && (
-              <button
-                type="button"
-                id="btn-confirmar-importacao-planilha"
-                onClick={handleConfirmarImportacao}
-                disabled={isGravando || registrosProcessados.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-xs sm:text-sm font-black uppercase text-white shadow-md hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 transition"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                <span>{isGravando ? 'Gravando...' : 'CONFIRMAR IMPORTAÇÃO'}</span>
-              </button>
-            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

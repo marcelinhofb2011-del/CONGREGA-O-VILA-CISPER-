@@ -362,6 +362,10 @@ export const CAMPO_PROGRAMACAO_INICIAL: CampoProgramacao[] = [
   },
 ];
 
+export const CANONICAL_CAMPO_SAMPLE_IDS = new Set(
+  CAMPO_PROGRAMACAO_INICIAL.map((i) => i.id)
+);
+
 export function getStoredCampoProgramacao(): CampoProgramacao[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CAMPO_PROGRAMACAO);
@@ -370,17 +374,27 @@ export function getStoredCampoProgramacao(): CampoProgramacao[] {
       return CAMPO_PROGRAMACAO_INICIAL;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : CAMPO_PROGRAMACAO_INICIAL;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const temRegistrosReais = parsed.some((i) => !CANONICAL_CAMPO_SAMPLE_IDS.has(i.id));
+      if (temRegistrosReais) {
+        const limpos = parsed.filter((i) => !CANONICAL_CAMPO_SAMPLE_IDS.has(i.id));
+        if (limpos.length > 0) {
+          return limpos;
+        }
+      }
+      return parsed;
+    }
+    return CAMPO_PROGRAMACAO_INICIAL;
   } catch {
     return CAMPO_PROGRAMACAO_INICIAL;
   }
 }
 
-export function saveStoredCampoProgramacao(item: CampoProgramacao): {
+export async function saveStoredCampoProgramacao(item: CampoProgramacao): Promise<{
   success: boolean;
   data?: CampoProgramacao[];
   error?: string;
-} {
+}> {
   try {
     const current = getStoredCampoProgramacao();
     const idx = current.findIndex((i) => i.id === item.id);
@@ -392,8 +406,9 @@ export function saveStoredCampoProgramacao(item: CampoProgramacao): {
       updated = [item, ...current];
     }
     localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('campo-programacao-firebase-updated', { detail: updated }));
     if ((firebaseSync as any).saveAllCampoProgramacao) {
-      (firebaseSync as any).saveAllCampoProgramacao(updated);
+      await (firebaseSync as any).saveAllCampoProgramacao(updated);
     }
     return { success: true, data: updated };
   } catch (err: any) {
@@ -401,17 +416,18 @@ export function saveStoredCampoProgramacao(item: CampoProgramacao): {
   }
 }
 
-export function deleteStoredCampoProgramacao(id: string): {
+export async function deleteStoredCampoProgramacao(id: string): Promise<{
   success: boolean;
   data?: CampoProgramacao[];
   error?: string;
-} {
+}> {
   try {
     const current = getStoredCampoProgramacao();
     const updated = current.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('campo-programacao-firebase-updated', { detail: updated }));
     if ((firebaseSync as any).saveAllCampoProgramacao) {
-      (firebaseSync as any).saveAllCampoProgramacao(updated);
+      await (firebaseSync as any).saveAllCampoProgramacao(updated);
     }
     return { success: true, data: updated };
   } catch (err: any) {
@@ -419,13 +435,15 @@ export function deleteStoredCampoProgramacao(id: string): {
   }
 }
 
-export function saveBulkCampoProgramacao(
+export async function saveBulkCampoProgramacao(
   newItems: CampoProgramacao[],
   mode: 'append' | 'replace_month' | 'replace_all',
   targetMonthKeys?: string[]
-): { success: boolean; data?: CampoProgramacao[]; error?: string; count?: number } {
+): Promise<{ success: boolean; data?: CampoProgramacao[]; error?: string; count?: number }> {
   try {
     const current = getStoredCampoProgramacao();
+    // Descarta dados de exemplo antigos do template ao importar dados reais
+    const cleanedCurrent = current.filter((item) => !CANONICAL_CAMPO_SAMPLE_IDS.has(item.id));
     let updated: CampoProgramacao[];
 
     if (mode === 'replace_all') {
@@ -433,14 +451,14 @@ export function saveBulkCampoProgramacao(
     } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
       // Filtra itens cujo mês não esteja nos meses alvo
       const monthsSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
-      const filtered = current.filter((item) => {
+      const filtered = cleanedCurrent.filter((item) => {
         // Formato da data: DD/MM/YYYY ou DD/MM
         const partes = item.data.split('/');
         if (partes.length >= 2) {
           const mesNum = parseInt(partes[1], 10);
           const nomes = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
           const nomeMes = nomes[mesNum - 1] || '';
-          return !Array.from(monthsSet).some((m) => m.includes(nomeMes));
+          return !Array.from(monthsSet).some((m) => m.includes(nomeMes) || (item.mesChave && m.includes(item.mesChave.toLowerCase())));
         }
         return true;
       });
@@ -448,7 +466,7 @@ export function saveBulkCampoProgramacao(
     } else {
       // Append / Mesclar: evitar duplicar mesma data e horário
       const map = new Map<string, CampoProgramacao>();
-      current.forEach((it) => map.set(`${it.data}_${it.horario}`, it));
+      cleanedCurrent.forEach((it) => map.set(`${it.data}_${it.horario}`, it));
       newItems.forEach((it) => map.set(`${it.data}_${it.horario}`, it));
       updated = Array.from(map.values());
     }
@@ -466,8 +484,9 @@ export function saveBulkCampoProgramacao(
     });
 
     localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('campo-programacao-firebase-updated', { detail: updated }));
     if ((firebaseSync as any).saveAllCampoProgramacao) {
-      (firebaseSync as any).saveAllCampoProgramacao(updated);
+      await (firebaseSync as any).saveAllCampoProgramacao(updated);
     }
     return { success: true, data: updated, count: newItems.length };
   } catch (err: any) {
