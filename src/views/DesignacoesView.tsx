@@ -33,12 +33,15 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { BulkImportExportModal } from '../components/BulkImportExportModal';
+import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
 
 export const DesignacoesView: React.FC = () => {
   const [escalas, setEscalas] = useState<EscalaDesignacaoItem[]>([]);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
+  const [isImportPlanilhaOpen, setIsImportPlanilhaOpen] = useState<boolean>(false);
+  const [modoVisualizacao, setModoVisualizacao] = useState<'cartoes' | 'tabela'>('cartoes');
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
@@ -436,12 +439,13 @@ export const DesignacoesView: React.FC = () => {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-slate-800 dark:text-emerald-300"
-              title="Importar planilhas em lote do Excel ou Google Sheets"
+              id="btn-importar-planilha-designacoes"
+              onClick={() => setIsImportPlanilhaOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3.5 py-1.5 text-xs font-black uppercase text-white shadow-xs hover:bg-emerald-700 transition"
+              title="Importar planilha trimestral de Designações"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Importar / Exportar Planilha</span>
+              <FileSpreadsheet className="h-4 w-4" />
+              <span>IMPORTAR PLANILHA</span>
             </button>
             <button
               onClick={handleOpenCreate}
@@ -599,132 +603,329 @@ export const DesignacoesView: React.FC = () => {
           ) : (
             (Object.entries(escalasAgrupadas) as [string, EscalaDesignacaoItem[]][]).map(([mesTitulo, itensDoMes]) => (
             <div key={mesTitulo} className="p-4 sm:p-5">
-              {/* Barra do Mês */}
-              <div className="mb-3 flex items-center justify-between rounded-lg bg-blue-100/80 px-4 py-2 dark:bg-blue-950/40">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-blue-900 dark:text-blue-200">
-                  {mesTitulo}
-                </h3>
-                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                  {itensDoMes.length} reuniões programadas
-                </span>
+              {/* Barra do Mês com Alternância de Visualização */}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blue-100/80 px-4 py-2.5 dark:bg-blue-950/40">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-blue-900 dark:text-blue-200">
+                    {mesTitulo}
+                  </h3>
+                  <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                    ({itensDoMes.length} reuniões)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setModoVisualizacao('cartoes')}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      modoVisualizacao === 'cartoes'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white/80 text-blue-900 hover:bg-white dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    Por Reunião (Fácil Leitura)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModoVisualizacao('tabela')}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      modoVisualizacao === 'tabela'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white/80 text-blue-900 hover:bg-white dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    Tabela
+                  </button>
+                </div>
               </div>
 
-              {/* Tabela de Designações */}
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs sm:text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-blue-600 bg-blue-600 text-white">
-                      <th className="p-2.5 font-bold uppercase tracking-wider sm:w-44">DIAS</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider">INDICADOR</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider">MICROFONE</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">LEITOR</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">ÁUDIO</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">VÍDEO</th>
-                      <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">Presidência</th>
-                      {isAdmin && <th className="p-2.5 text-center font-bold uppercase tracking-wider sm:w-20 print:hidden">Ações</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {itensDoMes.map((item, idx) => {
-                      const ehEspecial = item.ehEspecial;
-                      const hasIrmao = irmaoSelecionado && (
-                        verificarDesignacaoNome(irmaoSelecionado, item.indicador) ||
+              {modoVisualizacao === 'cartoes' ? (
+                /* APRESENTAÇÃO SIMPLES E FÁCIL: CADA REUNIÃO SEPARADA */
+                <div className="space-y-4">
+                  {itensDoMes.map((item) => {
+                    const hasIrmao =
+                      irmaoSelecionado &&
+                      (verificarDesignacaoNome(irmaoSelecionado, item.indicador) ||
                         verificarDesignacaoNome(irmaoSelecionado, item.microfone) ||
                         verificarDesignacaoNome(irmaoSelecionado, item.leitor) ||
                         verificarDesignacaoNome(irmaoSelecionado, item.audio) ||
                         verificarDesignacaoNome(irmaoSelecionado, item.video) ||
-                        verificarDesignacaoNome(irmaoSelecionado, item.presidencia)
-                      );
+                        verificarDesignacaoNome(irmaoSelecionado, item.presidencia));
 
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`transition ${
-                            hasIrmao
-                              ? 'bg-amber-100/90 font-medium text-amber-950 dark:bg-amber-950/40 dark:text-amber-100'
-                              : ehEspecial
-                              ? 'bg-rose-50 font-semibold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
-                              : idx % 2 === 0
-                              ? 'bg-white dark:bg-slate-900'
-                              : 'bg-slate-50/70 dark:bg-slate-900/60'
-                          } hover:bg-blue-50/50 dark:hover:bg-blue-950/20`}
-                        >
-                          {/* Dia */}
-                          <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">
-                            <span className={item.dia.toLowerCase().includes('domingo') ? 'text-rose-600 dark:text-rose-400' : ''}>
-                              {item.dia}
-                            </span>
-                          </td>
+                    const tituloReuniao = item.dia
+                      .toUpperCase()
+                      .replace(/\s+(\d{1,2}\/\d{1,2})/, ' — $1');
+                    const audioVideoTexto =
+                      item.audio && item.video
+                        ? `${item.audio} / ${item.video}`
+                        : item.audio || item.video || '—';
 
-                          {/* Indicador */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.indicador) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.indicador}
-                            </span>
-                          </td>
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-2xl border p-4 sm:p-5 transition shadow-xs ${
+                          hasIrmao
+                            ? 'border-amber-400 bg-amber-50/70 dark:border-amber-500 dark:bg-amber-950/40 ring-2 ring-amber-400/40'
+                            : item.ehEspecial
+                            ? 'border-rose-300 bg-rose-50/50 dark:border-rose-900/60 dark:bg-rose-950/30'
+                            : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                        }`}
+                      >
+                        {/* Cabeçalho da Data: Ex. QUINTA-FEIRA — 24/09 */}
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-3 dark:border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-blue-700 dark:text-blue-400" />
+                            <h4 className="text-sm sm:text-base font-black uppercase tracking-wide text-slate-900 dark:text-white">
+                              {tituloReuniao}
+                            </h4>
+                          </div>
 
-                          {/* Microfone */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.microfone) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.microfone}
-                            </span>
-                          </td>
-
-                          {/* Leitor */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.leitor) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.leitor || '—'}
-                            </span>
-                          </td>
-
-                          {/* Áudio */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.audio) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.audio}
-                            </span>
-                          </td>
-
-                          {/* Vídeo */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.video) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.video}
-                            </span>
-                          </td>
-
-                          {/* Presidência */}
-                          <td className="p-2.5">
-                            <span className={verificarDesignacaoNome(irmaoSelecionado, item.presidencia) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
-                              {item.presidencia || '—'}
-                            </span>
-                          </td>
-
-                          {/* Ações do Responsável */}
-                          {isAdmin && (
-                            <td className="p-2.5 text-center print:hidden">
-                              <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center gap-2">
+                            {hasIrmao && (
+                              <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-black text-amber-900 dark:bg-amber-800 dark:text-amber-100">
+                                Sua Designação
+                              </span>
+                            )}
+                            {item.ehEspecial && (
+                              <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+                                Evento Especial
+                              </span>
+                            )}
+                            {isAdmin && (
+                              <div className="flex items-center gap-1 print:hidden">
                                 <button
+                                  type="button"
                                   onClick={() => handleOpenEdit(item)}
-                                  className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-blue-400"
-                                  title="Editar escala"
+                                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                                  title="Editar reunião"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteItem(item.id, item.dia)}
-                                  className="rounded p-1 text-slate-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
-                                  title="Remover escala"
+                                  className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
+                                  title="Remover reunião"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Blocos de Designação Simples e Diretos */}
+                        <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm">
+                          {/* Indicador */}
+                          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-800">
+                            <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Indicador
+                            </span>
+                            <span
+                              className={`mt-0.5 block font-bold ${
+                                verificarDesignacaoNome(irmaoSelecionado, item.indicador)
+                                  ? 'text-amber-900 dark:text-amber-300 font-extrabold'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {item.indicador || '—'}
+                            </span>
+                          </div>
+
+                          {/* Microfone */}
+                          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-800">
+                            <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Microfone
+                            </span>
+                            <span
+                              className={`mt-0.5 block font-bold ${
+                                verificarDesignacaoNome(irmaoSelecionado, item.microfone)
+                                  ? 'text-amber-900 dark:text-amber-300 font-extrabold'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {item.microfone || '—'}
+                            </span>
+                          </div>
+
+                          {/* Áudio e vídeo */}
+                          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-800">
+                            <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Áudio e vídeo
+                            </span>
+                            <span
+                              className={`mt-0.5 block font-bold ${
+                                verificarDesignacaoNome(irmaoSelecionado, item.audio) ||
+                                verificarDesignacaoNome(irmaoSelecionado, item.video)
+                                  ? 'text-amber-900 dark:text-amber-300 font-extrabold'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {audioVideoTexto}
+                            </span>
+                          </div>
+
+                          {/* Leitor */}
+                          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-800">
+                            <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Leitor
+                            </span>
+                            <span
+                              className={`mt-0.5 block font-bold ${
+                                verificarDesignacaoNome(irmaoSelecionado, item.leitor)
+                                  ? 'text-amber-900 dark:text-amber-300 font-extrabold'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {item.leitor || '—'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Presidência ou Observação */}
+                        {(item.presidencia || item.observacao) && (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-3 pt-2 text-xs text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/60">
+                            {item.presidencia && (
+                              <div>
+                                <span className="font-bold text-slate-500 dark:text-slate-400">
+                                  Presidência:{' '}
+                                </span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {item.presidencia}
+                                </span>
+                              </div>
+                            )}
+                            {item.observacao && (
+                              <div>
+                                <span className="font-bold text-slate-500 dark:text-slate-400">Obs: </span>
+                                <span>{item.observacao}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Tabela de Designações */
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-blue-600 bg-blue-600 text-white">
+                        <th className="p-2.5 font-bold uppercase tracking-wider sm:w-44">DIAS</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider">INDICADOR</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider">MICROFONE</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">LEITOR</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">ÁUDIO</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">VÍDEO</th>
+                        <th className="p-2.5 font-bold uppercase tracking-wider sm:w-28">Presidência</th>
+                        {isAdmin && <th className="p-2.5 text-center font-bold uppercase tracking-wider sm:w-20 print:hidden">Ações</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {itensDoMes.map((item, idx) => {
+                        const ehEspecial = item.ehEspecial;
+                        const hasIrmao = irmaoSelecionado && (
+                          verificarDesignacaoNome(irmaoSelecionado, item.indicador) ||
+                          verificarDesignacaoNome(irmaoSelecionado, item.microfone) ||
+                          verificarDesignacaoNome(irmaoSelecionado, item.leitor) ||
+                          verificarDesignacaoNome(irmaoSelecionado, item.audio) ||
+                          verificarDesignacaoNome(irmaoSelecionado, item.video) ||
+                          verificarDesignacaoNome(irmaoSelecionado, item.presidencia)
+                        );
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`transition ${
+                              hasIrmao
+                                ? 'bg-amber-100/90 font-medium text-amber-950 dark:bg-amber-950/40 dark:text-amber-100'
+                                : ehEspecial
+                                ? 'bg-rose-50 font-semibold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
+                                : idx % 2 === 0
+                                ? 'bg-white dark:bg-slate-900'
+                                : 'bg-slate-50/70 dark:bg-slate-900/60'
+                            } hover:bg-blue-50/50 dark:hover:bg-blue-950/20`}
+                          >
+                            {/* Dia */}
+                            <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">
+                              <span className={item.dia.toLowerCase().includes('domingo') ? 'text-rose-600 dark:text-rose-400' : ''}>
+                                {item.dia}
+                              </span>
                             </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+
+                            {/* Indicador */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.indicador) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.indicador}
+                              </span>
+                            </td>
+
+                            {/* Microfone */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.microfone) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.microfone}
+                              </span>
+                            </td>
+
+                            {/* Leitor */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.leitor) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.leitor || '—'}
+                              </span>
+                            </td>
+
+                            {/* Áudio */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.audio) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.audio}
+                              </span>
+                            </td>
+
+                            {/* Vídeo */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.video) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.video}
+                              </span>
+                            </td>
+
+                            {/* Presidência */}
+                            <td className="p-2.5">
+                              <span className={verificarDesignacaoNome(irmaoSelecionado, item.presidencia) ? 'rounded bg-amber-200 px-1 py-0.5 font-bold text-amber-900 dark:bg-amber-800 dark:text-amber-100' : ''}>
+                                {item.presidencia || '—'}
+                              </span>
+                            </td>
+
+                            {/* Ações do Responsável */}
+                            {isAdmin && (
+                              <td className="p-2.5 text-center print:hidden">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenEdit(item)}
+                                    className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                                    title="Editar escala"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteItem(item.id, item.dia)}
+                                    className="rounded p-1 text-slate-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
+                                    title="Remover escala"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {/* Observação Oficial do Formulário */}
               <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-2.5 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
@@ -997,6 +1198,16 @@ export const DesignacoesView: React.FC = () => {
         dadosAtuais={escalas}
         isAdmin={isAdmin}
         onImportadoComSucesso={handleBulkSuccess}
+      />
+
+      {/* Modal Especializado de Importação de Planilha Trimestral */}
+      <ImportarPlanilhaModal
+        isOpen={isImportPlanilhaOpen}
+        onClose={() => setIsImportPlanilhaOpen(false)}
+        modulo="designacoes"
+        onImportadoComSucesso={() => {
+          setEscalas(getStoredEscalaDesignacoes());
+        }}
       />
     </div>
   );

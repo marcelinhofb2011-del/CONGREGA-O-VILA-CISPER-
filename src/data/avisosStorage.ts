@@ -45,59 +45,33 @@ export function marcarAvisoComoVisualizado(id: string): void {
   }
 }
 
-export const AVISOS_CANONICOS: AvisoItem[] = [
-  {
-    id: 'aviso-1',
-    titulo: 'Horário das Reuniões da Congregação Vila Cisper',
-    conteudo: 'Lembramos a todos os irmãos e visitantes que nossas reuniões ocorrem pontualmente: Reunião de Meio de Semana às Quintas-feiras às 20:00, e Reunião de Fim de Semana aos Domingos às 18:00.',
-    categoria: 'Reunião',
-    dataPublicacao: '01/09/2026',
-    fixado: true,
-    autor: 'Corpo de Anciãos',
-  },
-  {
-    id: 'aviso-2',
-    titulo: 'Chegada com Antecedência para Irmãos Designados',
-    conteudo: 'Os irmãos designados para microfones volantes, indicadores, som e vídeo devem chegar com pelo menos 20 minutos de antecedência para os testes de áudio e organização do Salão.',
-    categoria: 'Importante',
-    dataPublicacao: '05/09/2026',
-    fixado: true,
-    autor: 'Superintendente de Serviço',
-  },
-  {
-    id: 'aviso-3',
-    titulo: 'Arranjos para o Serviço de Campo no Fim de Semana',
-    conteudo: 'As saídas de campo aos sábados e domingos contam com dirigentes designados. Consulte a seção "Serviço de Campo" para conferir os pontos de encontro e horários de cada grupo.',
-    categoria: 'Campo',
-    dataPublicacao: '10/09/2026',
-    fixado: false,
-    autor: 'Comissão de Serviço',
-  },
-  {
-    id: 'aviso-4',
-    titulo: 'Limpeza Semanal do Salão do Reino',
-    conteudo: 'A limpeza do Salão do Reino é realizada com amor e dedicação pelos grupos em rodízio semanal. Confira na seção "Limpeza" qual grupo está encarregado nesta semana.',
-    categoria: 'Limpeza',
-    dataPublicacao: '12/09/2026',
-    fixado: false,
-    autor: 'Coordenação do Salão',
-  },
-];
+// Nenhuma mensagem padrão ou pré-escrita. Lista inicia vazia por padrão.
+export const AVISOS_CANONICOS: AvisoItem[] = [];
+
+// Identificadores de mensagens pré-escritas/demonstração que devem ser eliminadas se existirem no armazenamento
+export const DEMO_AVISO_IDS = new Set(['aviso-1', 'aviso-2', 'aviso-3', 'aviso-4']);
 
 export function getStoredAvisos(): AvisoItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_AVISOS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY_AVISOS, JSON.stringify(AVISOS_CANONICOS));
-      return AVISOS_CANONICOS;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (Array.isArray(parsed)) {
+      // Filtra e remove definitivamente mensagens de demonstração/pré-escritas
+      const limpa = parsed.filter(
+        (item) => item && typeof item === 'object' && item.id && !DEMO_AVISO_IDS.has(item.id)
+      );
+      if (limpa.length !== parsed.length) {
+        // Atualiza o armazenamento local removendo os itens de demonstração
+        localStorage.setItem(STORAGE_KEY_AVISOS, JSON.stringify(limpa));
+      }
+      return limpa;
     }
-    return AVISOS_CANONICOS;
+    return [];
   } catch {
-    return AVISOS_CANONICOS;
+    return [];
   }
 }
 

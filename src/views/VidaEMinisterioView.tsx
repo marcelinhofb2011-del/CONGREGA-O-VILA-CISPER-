@@ -30,11 +30,14 @@ import {
   X,
   Eye,
   EyeOff,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
 
 export const VidaEMinisterioView: React.FC = () => {
   const [semanas, setSemanas] = useState<S140TSemana[]>([]);
   const [semanaIdAtiva, setSemanaIdAtiva] = useState<string>('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Autenticação do Irmão Responsável
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -194,6 +197,16 @@ export const VidaEMinisterioView: React.FC = () => {
           <div className="flex items-center gap-2">
             {isAdmin ? (
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-importar-planilha-vida-ministerio"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
+                  title="Importar planilha trimestral de Vida e Ministério"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>IMPORTAR PLANILHA</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleNovoCadastro}
@@ -653,6 +666,16 @@ export const VidaEMinisterioView: React.FC = () => {
         semana={semanaParaEditar}
         onClose={() => setIsEditorOpen(false)}
         onSave={handleSalvarSemana}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE IMPORTAÇÃO DE PLANILHA TRIMESTRAL                   */}
+      {/* ------------------------------------------------------------- */}
+      <ImportarPlanilhaModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        modulo="vida-ministerio"
+        onImportadoComSucesso={() => carregarDados()}
       />
     </div>
   );

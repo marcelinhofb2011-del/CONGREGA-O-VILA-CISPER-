@@ -3,7 +3,7 @@ import { firebaseSync } from './firebaseSyncService';
 // Armazenamento e gerenciamento permanente de Territórios, Solicitações, Transferências e Histórico
 
 export type StatusTerritorio = 'Disponível' | 'Designado' | 'Concluído' | 'Estornado';
-export type StatusSolicitacao = 'Pendente' | 'Designado';
+export type StatusSolicitacao = 'Pendente' | 'Designado' | 'Cancelada';
 export type StatusTransferencia = 'Aguardando aprovação' | 'Aprovada' | 'Recusada';
 
 export interface Territorio {
@@ -347,6 +347,44 @@ export function designarTerritorioParaSolicitacao(
   const updatedHistorico = saveStoredHistorico(historicoItem);
 
   return { solicitacoes, territorios, historico: updatedHistorico };
+}
+
+// Cancelar solicitação sem designar nenhum território (AÇÃO DO RESPONSÁVEL)
+export function cancelarSolicitacaoTerritorio(
+  solicitacaoId: string,
+  responsavelNome?: string
+): { solicitacoes: SolicitacaoTerritorio[]; historico: HistoricoTerritorio[] } {
+  const solicitacoes = getStoredSolicitacoes();
+  const solIndex = solicitacoes.findIndex((s) => s.id === solicitacaoId);
+
+  if (solIndex === -1) {
+    return { solicitacoes, historico: getStoredHistorico() };
+  }
+
+  const sol = solicitacoes[solIndex];
+  const now = new Date();
+  const dataHojeBR = formatarDataHoje();
+  const horaHojeBR = formatarHoraHoje();
+
+  // 1. Remover a solicitação da lista de solicitações pendentes
+  const updatedSolicitacoes = solicitacoes.filter((s) => s.id !== solicitacaoId);
+  localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(updatedSolicitacoes));
+
+  // 2. Registrar a solicitação como Cancelada no histórico permanente
+  const historicoItem: HistoricoTerritorio = {
+    id: String(Date.now()),
+    territorio_numero: 0,
+    publicador: sol.nome_publicador,
+    acao: 'Solicitação Cancelada',
+    status: 'Cancelada',
+    responsavel: (responsavelNome && responsavelNome.trim()) || 'Irmão Responsável',
+    data: `${dataHojeBR} às ${horaHojeBR}`,
+    observacao: 'Solicitação cancelada pelo responsável sem designação de território.',
+    created_at: now.toISOString(),
+  };
+  const updatedHistorico = saveStoredHistorico(historicoItem);
+
+  return { solicitacoes: updatedSolicitacoes, historico: updatedHistorico };
 }
 
 // -------------------------------------------------------------

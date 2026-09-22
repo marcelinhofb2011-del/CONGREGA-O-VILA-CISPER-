@@ -418,3 +418,60 @@ export function deleteStoredCampoProgramacao(id: string): {
     return { success: false, error: err.message };
   }
 }
+
+export function saveBulkCampoProgramacao(
+  newItems: CampoProgramacao[],
+  mode: 'append' | 'replace_month' | 'replace_all',
+  targetMonthKeys?: string[]
+): { success: boolean; data?: CampoProgramacao[]; error?: string; count?: number } {
+  try {
+    const current = getStoredCampoProgramacao();
+    let updated: CampoProgramacao[];
+
+    if (mode === 'replace_all') {
+      updated = [...newItems];
+    } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
+      // Filtra itens cujo mês não esteja nos meses alvo
+      const monthsSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
+      const filtered = current.filter((item) => {
+        // Formato da data: DD/MM/YYYY ou DD/MM
+        const partes = item.data.split('/');
+        if (partes.length >= 2) {
+          const mesNum = parseInt(partes[1], 10);
+          const nomes = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+          const nomeMes = nomes[mesNum - 1] || '';
+          return !Array.from(monthsSet).some((m) => m.includes(nomeMes));
+        }
+        return true;
+      });
+      updated = [...filtered, ...newItems];
+    } else {
+      // Append / Mesclar: evitar duplicar mesma data e horário
+      const map = new Map<string, CampoProgramacao>();
+      current.forEach((it) => map.set(`${it.data}_${it.horario}`, it));
+      newItems.forEach((it) => map.set(`${it.data}_${it.horario}`, it));
+      updated = Array.from(map.values());
+    }
+
+    // Ordenar cronologicamente
+    updated.sort((a, b) => {
+      const pA = a.data.split('/');
+      const pB = b.data.split('/');
+      if (pA.length >= 3 && pB.length >= 3) {
+        const dA = `${pA[2]}-${pA[1].padStart(2, '0')}-${pA[0].padStart(2, '0')}`;
+        const dB = `${pB[2]}-${pB[1].padStart(2, '0')}-${pB[0].padStart(2, '0')}`;
+        return dA.localeCompare(dB);
+      }
+      return a.data.localeCompare(b.data);
+    });
+
+    localStorage.setItem(STORAGE_KEY_CAMPO_PROGRAMACAO, JSON.stringify(updated));
+    if ((firebaseSync as any).saveAllCampoProgramacao) {
+      (firebaseSync as any).saveAllCampoProgramacao(updated);
+    }
+    return { success: true, data: updated, count: newItems.length };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro ao salvar serviço de campo em lote.' };
+  }
+}
+

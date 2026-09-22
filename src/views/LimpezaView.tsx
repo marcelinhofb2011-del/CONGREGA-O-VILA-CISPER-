@@ -36,6 +36,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { BulkImportExportModal } from '../components/BulkImportExportModal';
+import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
 
 export const LimpezaView: React.FC = () => {
   const [escalas, setEscalas] = useState<LimpezaEscalaItem[]>([]);
@@ -44,6 +45,7 @@ export const LimpezaView: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
+  const [isImportPlanilhaOpen, setIsImportPlanilhaOpen] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
@@ -302,12 +304,14 @@ export const LimpezaView: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
-              title="Selecionar planilha (Excel / CSV) para importar escala de limpeza"
+              type="button"
+              id="btn-importar-planilha-limpeza"
+              onClick={() => setIsImportPlanilhaOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700"
+              title="Importar planilha trimestral de Grupo de Limpeza"
             >
-              <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Importar Planilha</span>
+              <FileSpreadsheet className="h-4 w-4" />
+              <span>IMPORTAR PLANILHA</span>
             </button>
           )}
 
@@ -912,6 +916,14 @@ export const LimpezaView: React.FC = () => {
         dadosAtuais={escalas}
         isAdmin={isAdmin}
         onImportadoComSucesso={handleBulkSuccess}
+      />
+
+      {/* Modal de Importação de Planilha Trimestral */}
+      <ImportarPlanilhaModal
+        isOpen={isImportPlanilhaOpen}
+        onClose={() => setIsImportPlanilhaOpen(false)}
+        modulo="limpeza"
+        onImportadoComSucesso={() => setEscalas(getStoredLimpezaEscalas())}
       />
     </div>
   );

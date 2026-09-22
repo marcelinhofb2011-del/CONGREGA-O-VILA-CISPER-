@@ -357,6 +357,15 @@ class FirebaseSyncManager {
     }
   }
 
+  public async saveAllS140T(items: any[]): Promise<void> {
+    return this.saveBatchCollection(
+      COLLECTIONS.S140T,
+      items,
+      STORAGE_KEY_S140T,
+      's140t-firebase-updated'
+    );
+  }
+
   public async saveAllDesignacoes(items: any[]): Promise<void> {
     return this.saveBatchCollection(
       COLLECTIONS.DESIGNACOES,

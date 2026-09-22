@@ -176,17 +176,13 @@ export function saveBulkDiscursosBiblicos(
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonth) {
       const monthList = Array.isArray(targetMonth) ? targetMonth.map((m) => m.toLowerCase()) : [targetMonth.toLowerCase()];
-      const filtered = current.filter((item) => !monthList.includes(item.mes.toLowerCase()));
+      const filtered = current.filter((item) => !monthList.some((m) => item.mes.toLowerCase().includes(m) || m.includes(item.mes.toLowerCase())));
       updated = [...filtered, ...newItems];
     } else {
-      const existingIds = new Set(current.map((i) => i.id));
-      const filteredNew = newItems.map((item) => {
-        if (existingIds.has(item.id)) {
-          return { ...item, id: `disc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` };
-        }
-        return item;
-      });
-      updated = [...current, ...filteredNew];
+      const map = new Map<string, DiscursoBiblicoItem>();
+      current.forEach((it) => map.set(it.data.trim(), it));
+      newItems.forEach((it) => map.set(it.data.trim(), it));
+      updated = Array.from(map.values());
     }
 
     localStorage.setItem(STORAGE_KEY_DISCURSOS, JSON.stringify(updated));

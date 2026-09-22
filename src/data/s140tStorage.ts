@@ -469,3 +469,58 @@ export function verificarDesignacaoIrmao(
   }
   return campo.includes(proc) || proc.includes(campo);
 }
+
+export function saveBulkS140TSemanas(
+  newWeeks: S140TSemana[],
+  mode: 'append' | 'replace_month' | 'replace_all',
+  targetMonthKeys?: string[]
+): { success: boolean; data?: S140TSemana[]; error?: string; count?: number } {
+  try {
+    const current = getStoredS140TSemanas();
+    let updated: S140TSemana[];
+
+    if (mode === 'replace_all') {
+      updated = [...newWeeks];
+    } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
+      const keysSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
+      // Filtra semanas que não pertencem aos meses que estão sendo substituídos
+      const filtered = current.filter((item) => {
+        // Se a data de referência YYYY-MM-DD contiver o mês
+        const matchData = item.dataReferencia?.substring(5, 7); // MM
+        const matchAno = item.dataReferencia?.substring(0, 4); // YYYY
+        // Também checa pelo período ou mês
+        const itemPeriodo = (item.periodo || '').toLowerCase();
+        return !Array.from(keysSet).some((key) => {
+          return itemPeriodo.includes(key);
+        });
+      });
+      updated = [...filtered, ...newWeeks];
+    } else {
+      // Append / Mesclar: evitar duplicados pelo ID ou dataReferencia
+      const existingRefDates = new Set(current.map((w) => w.dataReferencia));
+      const filteredNew = newWeeks.map((item) => {
+        if (existingRefDates.has(item.dataReferencia)) {
+          // Substitui a que tiver mesma dataReferencia
+          return item;
+        }
+        return item;
+      });
+      // Mescla atualizando as coincidentes e acrescentando as novas
+      const map = new Map<string, S140TSemana>();
+      current.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      updated = Array.from(map.values());
+    }
+
+    // Ordenar cronologicamente
+    updated.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
+
+    localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
+    if ((firebaseSync as any).saveAllS140T) {
+      (firebaseSync as any).saveAllS140T(updated);
+    }
+    return { success: true, data: updated, count: newWeeks.length };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro ao salvar programações em lote.' };
+  }
+}

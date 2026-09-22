@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   Check,
   X,
+  XCircle,
   ArrowRight,
   ShieldAlert,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import {
   saveStoredTerritorio,
   deleteStoredTerritorio,
   designarTerritorioParaSolicitacao,
+  cancelarSolicitacaoTerritorio,
   aprovarTransferencia,
   recusarTransferencia,
   tornarTerritorioDisponivel,
@@ -57,6 +59,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
   // ESTADOS: SOLICITAÇÕES & DESIGNAÇÃO
   // -------------------------------------------------------------
   const [designandoSolicitacao, setDesignandoSolicitacao] = useState<SolicitacaoTerritorio | null>(null);
+  const [solicitacaoParaCancelar, setSolicitacaoParaCancelar] = useState<SolicitacaoTerritorio | null>(null);
   const [selectedTerritorioIdParaDesignar, setSelectedTerritorioIdParaDesignar] = useState<string>('');
   const [responsavelDesignacaoNome, setResponsavelDesignacaoNome] = useState<string>('');
   const [designacaoError, setDesignacaoError] = useState<string>('');
@@ -213,6 +216,16 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
     setSelectedTerritorioIdParaDesignar('');
     setDesignacaoError('');
     onNotification(`Território Nº ${ter.numero} designado para ${designandoSolicitacao.nome_publicador}.`);
+    onDataChange();
+  };
+
+  const handleConfirmarCancelamento = () => {
+    if (!solicitacaoParaCancelar) return;
+    const resp = responsavelDesignacaoNome.trim() || 'Irmão Responsável';
+    cancelarSolicitacaoTerritorio(solicitacaoParaCancelar.id, resp);
+    const publicadorNome = solicitacaoParaCancelar.nome_publicador;
+    setSolicitacaoParaCancelar(null);
+    onNotification(`Solicitação de ${publicadorNome} cancelada.`);
     onDataChange();
   };
 
@@ -560,15 +573,26 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                         </td>
                         <td className="px-4 py-3 text-right">
                           {sol.status === 'Pendente' ? (
-                            <button
-                              id={`btn-designar-solicitacao-${sol.id}`}
-                              type="button"
-                              onClick={() => handleOpenDesignarModal(sol)}
-                              className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              DESIGNAR
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                id={`btn-designar-solicitacao-${sol.id}`}
+                                type="button"
+                                onClick={() => handleOpenDesignarModal(sol)}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                DESIGNAR
+                              </button>
+                              <button
+                                id={`btn-cancelar-solicitacao-${sol.id}`}
+                                type="button"
+                                onClick={() => setSolicitacaoParaCancelar(sol)}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                CANCELAR
+                              </button>
+                            </div>
                           ) : (
                             <span className="text-slate-400 text-xs italic">
                               Atendido em {sol.data_designacao}
@@ -998,6 +1022,8 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                                 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                                 : h.acao.includes('Transferência')
                                 ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                                : h.acao.includes('Cancel')
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                                 : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
                             }`}
                           >
@@ -1144,6 +1170,66 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: CONFIRMAÇÃO PARA CANCELAR SOLICITAÇÃO */}
+      {/* ------------------------------------------------------------- */}
+      {solicitacaoParaCancelar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                  Cancelar esta solicitação?
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSolicitacaoParaCancelar(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-950 dark:text-slate-300 border border-slate-200 dark:border-slate-800 space-y-1">
+                <p>
+                  <strong>Publicador:</strong> {solicitacaoParaCancelar.nome_publicador}
+                </p>
+                <p className="text-slate-500">
+                  Solicitado em: {solicitacaoParaCancelar.data_solicitacao} às {solicitacaoParaCancelar.hora_solicitacao}
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                A solicitação será encerrada e removida das solicitações pendentes sem designar nenhum território, sendo registrada como cancelada no histórico.
+              </p>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                id="btn-voltar-cancelar-solicitacao"
+                type="button"
+                onClick={() => setSolicitacaoParaCancelar(null)}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                VOLTAR
+              </button>
+              <button
+                id="btn-confirmar-cancelar-solicitacao"
+                type="button"
+                onClick={handleConfirmarCancelamento}
+                className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                CANCELAR SOLICITAÇÃO
+              </button>
+            </div>
           </div>
         </div>
       )}

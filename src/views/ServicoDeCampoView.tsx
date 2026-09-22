@@ -14,7 +14,9 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
 import {
   CampoProgramacao,
   getStoredCampoProgramacao,
@@ -62,6 +64,7 @@ export const ServicoDeCampoView: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [itemParaEditar, setItemParaEditar] = useState<CampoProgramacao | null>(null);
   const [itemParaExcluir, setItemParaExcluir] = useState<CampoProgramacao | null>(null);
 
@@ -275,6 +278,16 @@ export const ServicoDeCampoView: React.FC = () => {
           <div className="flex items-center gap-2">
             {isAdmin ? (
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-importar-planilha-campo"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
+                  title="Importar planilha trimestral de Serviço de Campo"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>IMPORTAR PLANILHA</span>
+                </button>
                 <button
                   type="button"
                   id="btn-cadastrar-campo"
@@ -852,6 +865,14 @@ export const ServicoDeCampoView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Importação de Planilha Trimestral */}
+      <ImportarPlanilhaModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        modulo="campo"
+        onImportadoComSucesso={() => setProgramacoes(getStoredCampoProgramacao())}
+      />
     </div>
   );
 };
