@@ -56,7 +56,7 @@ interface ImportarPlanilhaModalProps {
   isOpen: boolean;
   onClose: () => void;
   modulo: ModuloImportacao;
-  onImportadoComSucesso?: (count: number) => void;
+  onImportadoComSucesso?: (count: number, meses?: string[]) => void;
 }
 
 const MESES_NOMES = [
@@ -126,8 +126,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   const [showProblemasModal, setShowProblemasModal] = useState<boolean>(false);
   const [showOpcoesAvancadas, setShowOpcoesAvancadas] = useState<boolean>(false);
 
-  // Opção para registros existentes (Evitar duplicação - dentro de Opções avançadas)
-  const [modoSubstituicao, setModoSubstituicao] = useState<'substituir' | 'apenas_novos'>('substituir');
+  // Opção para registros existentes (Substituição / Adição)
+  const [modoSubstituicao, setModoSubstituicao] = useState<'substituir_tudo' | 'substituir_meses' | 'apenas_novos'>('substituir_tudo');
 
   // Estado de gravação
   const [isGravando, setIsGravando] = useState<boolean>(false);
@@ -364,14 +364,17 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         (normLinha.includes('indicador') && normLinha.includes('microfone')) ||
         (normLinha.includes('orador') && normLinha.includes('tema')) ||
         (normLinha.includes('ponto') && normLinha.includes('responsavel')) ||
-        (normLinha.includes('grupo') && normLinha.includes('limpeza')) ||
+        (normLinha.includes('grupo') && (normLinha.includes('limpeza') || normLinha.includes('responsavel') || normLinha.includes('escala'))) ||
+        (normLinha.includes('dias') && normLinha.includes('grupo')) ||
+        (normLinha.includes('data') && normLinha.includes('grupo')) ||
         (normLinha.includes('tesouros') && normLinha.includes('presidente'))
       ) {
         cabecalhoDetectado = true;
         mapaColunas = {};
         cells.forEach((c, i) => {
           const colNorm = normalizar(c);
-          if (colNorm.includes('data') || colNorm.includes('dia')) mapaColunas['data'] = i;
+          if (colNorm.includes('data') || colNorm.includes('dia') || colNorm.includes('periodo') || colNorm.includes('intervalo'))
+            mapaColunas['data'] = i;
           if (colNorm.includes('indicador')) mapaColunas['indicador'] = i;
           if (colNorm.includes('microfone') || colNorm.includes('volante')) mapaColunas['microfone'] = i;
           if (colNorm.includes('leitor')) mapaColunas['leitor'] = i;
@@ -382,39 +385,68 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           if (colNorm.includes('orador')) mapaColunas['orador'] = i;
           if (colNorm.includes('horario') || colNorm.includes('hora')) mapaColunas['horario'] = i;
           if (colNorm.includes('ponto') || colNorm.includes('local')) mapaColunas['pontoEncontro'] = i;
-          if (colNorm.includes('responsavel') || colNorm.includes('dirigente')) mapaColunas['responsavel'] = i;
+          if (colNorm.includes('responsavel') || colNorm.includes('dirigente') || colNorm.includes('encarregado'))
+            mapaColunas['responsavel'] = i;
           if (colNorm.includes('grupo')) mapaColunas['grupo'] = i;
+          if (colNorm.includes('reuniao') || colNorm.includes('semana') || colNorm.includes('frequencia'))
+            mapaColunas['diasSemana'] = i;
           if (colNorm.includes('presidente')) mapaColunas['presidente'] = i;
           if (colNorm.includes('parte')) mapaColunas['partes'] = i;
+          if (colNorm.includes('observacao') || colNorm.includes('obs')) mapaColunas['observacao'] = i;
         });
         continue;
       }
 
       // Extrai data da linha
-      const matchData = linhaTexto.match(/(\d{1,2})[\/\-\.](\d{1,2})([\/\-\.](\d{2,4}))?/);
       let dataFormatada = '';
       let diaNum = 0;
       let mesNum = 0;
       let anoNum = anoAtual;
+      let rawDiasIntervaloLimpeza = '';
 
-      if (matchData) {
-        diaNum = parseInt(matchData[1], 10);
-        mesNum = parseInt(matchData[2], 10);
-        if (matchData[4]) {
-          anoNum = parseInt(matchData[4], 10);
-          if (anoNum < 100) anoNum += 2000;
-        }
-        dataFormatada = `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}/${anoNum}`;
-        if (mesNum >= 1 && mesNum <= 12) {
-          mesContextoAtual = MESES_NOMES[mesNum - 1];
+      if (modulo === 'limpeza') {
+        // No módulo de limpeza, a coluna de dias frequentemente traz intervalos como "7/11", "04/08", "14/18", "4", "28"
+        const colIdx = mapaColunas['data'] !== undefined ? mapaColunas['data'] : 0;
+        const celulaDias = (cells[colIdx] || '').trim();
+        const matchNums = celulaDias.match(/\d+/g);
+
+        if (matchNums && matchNums.length > 0) {
+          rawDiasIntervaloLimpeza = celulaDias;
+          diaNum = parseInt(matchNums[0], 10);
+          mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
+          dataFormatada = `${rawDiasIntervaloLimpeza} de ${mesContextoAtual}`;
+        } else {
+          // Tenta encontrar em outra célula da linha se a coluna 0 estiver vazia
+          const celComNum = cells.find((c) => /\d+/.test(c));
+          if (celComNum) {
+            rawDiasIntervaloLimpeza = celComNum.trim();
+            const nums = rawDiasIntervaloLimpeza.match(/\d+/g);
+            diaNum = nums ? parseInt(nums[0], 10) : 1;
+            mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
+            dataFormatada = `${rawDiasIntervaloLimpeza} de ${mesContextoAtual}`;
+          }
         }
       } else {
-        // Se a primeira coluna tem apenas o dia número (ex: "04", "07")
-        const possivelDia = parseInt(cells[0], 10);
-        if (!isNaN(possivelDia) && possivelDia >= 1 && possivelDia <= 31) {
-          diaNum = possivelDia;
-          mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
+        const matchData = linhaTexto.match(/(\d{1,2})[\/\-\.](\d{1,2})([\/\-\.](\d{2,4}))?/);
+        if (matchData) {
+          diaNum = parseInt(matchData[1], 10);
+          mesNum = parseInt(matchData[2], 10);
+          if (matchData[4]) {
+            anoNum = parseInt(matchData[4], 10);
+            if (anoNum < 100) anoNum += 2000;
+          }
           dataFormatada = `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}/${anoNum}`;
+          if (mesNum >= 1 && mesNum <= 12) {
+            mesContextoAtual = MESES_NOMES[mesNum - 1];
+          }
+        } else {
+          // Se a primeira coluna tem apenas o dia número (ex: "04", "07")
+          const possivelDia = parseInt(cells[0], 10);
+          if (!isNaN(possivelDia) && possivelDia >= 1 && possivelDia <= 31) {
+            diaNum = possivelDia;
+            mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
+            dataFormatada = `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}/${anoNum}`;
+          }
         }
       }
 
@@ -630,13 +662,53 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           avisos: avisosLinha,
         });
       } else if (modulo === 'limpeza') {
-        const grupo = mapaColunas['grupo'] !== undefined ? cells[mapaColunas['grupo']] : cells[1] || cells[2] || 'GRUPO 1';
-        const responsaveis = cells[3] || '';
+        // Identificação resiliente do grupo
+        let grupo = mapaColunas['grupo'] !== undefined ? cells[mapaColunas['grupo']] : '';
+        if (!grupo) {
+          const celGrupo = cells.find((c) => /grupo\s*\d/i.test(c) || /assembl[eé]ia/i.test(c) || /congresso/i.test(c));
+          grupo = celGrupo || cells[1] || cells[2] || 'GRUPO 1';
+        }
+
+        // Reuniões / Dias da semana
+        let diasSemana = mapaColunas['diasSemana'] !== undefined ? cells[mapaColunas['diasSemana']] : '';
+        if (!diasSemana) {
+          const celSemana = cells.find((c) => /quarta|domingo|s[aá]bado|quinta/i.test(c));
+          if (celSemana) {
+            diasSemana = celSemana;
+          } else if (normLinha.includes('quarta') && normLinha.includes('domingo')) {
+            diasSemana = 'Quarta Feira e Domingo';
+          } else if (normLinha.includes('quarta')) {
+            diasSemana = 'Quarta Feira';
+          } else if (normLinha.includes('domingo')) {
+            diasSemana = 'Domingo';
+          } else {
+            diasSemana = 'Quarta Feira e Domingo';
+          }
+        }
+
+        // Responsáveis encarregados
+        let responsaveis = mapaColunas['responsavel'] !== undefined ? cells[mapaColunas['responsavel']] : '';
+        if (!responsaveis) {
+          // Busca célula que não seja grupo nem dias
+          const possiveis = cells.filter(
+            (c) =>
+              c &&
+              c !== grupo &&
+              c !== diasSemana &&
+              !/^\d+([\/\-\.]\d+)?$/.test(c) &&
+              !normalizar(c).includes('janeiro') &&
+              !normalizar(c).includes('fevereiro')
+          );
+          responsaveis = possiveis[0] || cells[3] || cells[2] || '';
+        }
+
+        const ehEspecial = normLinha.includes('assembleia') || normLinha.includes('congresso');
+        const diasStr = rawDiasIntervaloLimpeza || (diaNum ? String(diaNum).padStart(2, '0') : cells[0] || '1');
 
         if (!grupo) {
           validacoes.push({
             mes: mesContextoAtual,
-            data: dataFormatada,
+            data: `${diasStr} de ${mesContextoAtual}`,
             campo: 'Grupo Responsável',
             motivo: 'Grupo responsável pela limpeza não identificado.',
             gravidade: 'erro',
@@ -648,22 +720,24 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           id: `limp-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
           mes: mesContextoAtual,
           mesChave: normalizar(mesContextoAtual),
-          dias: String(diaNum).padStart(2, '0'),
-          diasSemana: diaSemanaCalculado || 'Quarta Feira e Domingo',
+          dias: diasStr,
+          diasSemana: ehEspecial ? grupo : diasSemana,
           grupo: grupo.toUpperCase(),
           responsaveis: responsaveis.trim(),
-          observacao: '',
-          ehEspecial: false,
+          observacao: ehEspecial ? grupo : (mapaColunas['observacao'] !== undefined ? cells[mapaColunas['observacao']] : ''),
+          ehEspecial,
         };
 
         registros.push({
           idTemp: itemFinal.id,
           mes: mesContextoAtual,
-          data: dataFormatada,
-          diaSemanaCalculado,
+          data: `${diasStr} de ${mesContextoAtual}`,
+          diaSemanaCalculado: itemFinal.diasSemana,
           dadosFormatados: {
-            Data: dataFormatada,
-            'Grupo responsável': grupo.toUpperCase(),
+            'Intervalo de Dias': `${itemFinal.dias} de ${itemFinal.mes}`,
+            'Grupo Encarregado': itemFinal.grupo,
+            'Reuniões': itemFinal.diasSemana,
+            'Responsáveis': itemFinal.responsaveis || '—',
           },
           itemFinal,
           avisos: avisosLinha,
@@ -771,41 +845,48 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       const itensFinais = registrosProcessados.map((r) => r.itemFinal);
       const chavesMeses = mesesSelecionados.map(normalizar);
 
+      const bulkMode =
+        modoSubstituicao === 'substituir_tudo'
+          ? 'replace_all'
+          : modoSubstituicao === 'substituir_meses'
+          ? 'replace_month'
+          : 'append';
+
       if (modulo === 'designacoes') {
         await saveBulkEscalaDesignacoes(
           itensFinais as EscalaDesignacaoItem[],
-          modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
+          bulkMode,
           chavesMeses
         );
       } else if (modulo === 'discursos') {
         await saveBulkDiscursosBiblicos(
           itensFinais as DiscursoBiblicoItem[],
-          modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
+          bulkMode,
           mesesSelecionados
         );
       } else if (modulo === 'campo') {
         await saveBulkCampoProgramacao(
           itensFinais as CampoProgramacao[],
-          modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
+          bulkMode,
           chavesMeses
         );
       } else if (modulo === 'limpeza') {
         await saveBulkLimpezaEscala(
           itensFinais as LimpezaEscalaItem[],
-          modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
+          bulkMode,
           chavesMeses
         );
       } else if (modulo === 'vida-ministerio') {
         await saveBulkS140TSemanas(
           itensFinais as S140TSemana[],
-          modoSubstituicao === 'substituir' ? 'replace_month' : 'append',
+          bulkMode,
           chavesMeses
         );
       }
 
       setSucessoMsg(`Importação de ${itensFinais.length} registros realizada com sucesso!`);
       if (onImportadoComSucesso) {
-        onImportadoComSucesso(itensFinais.length);
+        onImportadoComSucesso(itensFinais.length, mesesSelecionados);
       }
 
       setTimeout(() => {
@@ -1164,27 +1245,61 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     <p className="font-bold text-slate-700 dark:text-slate-300">
                       Tratamento de dados existentes:
                     </p>
-                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
                       <input
                         type="radio"
                         name="substituicao"
-                        value="substituir"
-                        checked={modoSubstituicao === 'substituir'}
-                        onChange={() => setModoSubstituicao('substituir')}
-                        className="text-blue-600 focus:ring-blue-500"
+                        value="substituir_tudo"
+                        checked={modoSubstituicao === 'substituir_tudo'}
+                        onChange={() => setModoSubstituicao('substituir_tudo')}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
                       />
-                      <span>Substituir programações dos meses selecionados (Recomendado)</span>
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white block">
+                          Substituir toda a programação anterior (Recomendado)
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                          Descarta dados anteriores e resíduos de exemplo (como Abril), definindo exclusivamente o período desta planilha ({formatarMesesTexto(mesesSelecionados)}).
+                        </span>
+                      </div>
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+
+                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
+                      <input
+                        type="radio"
+                        name="substituicao"
+                        value="substituir_meses"
+                        checked={modoSubstituicao === 'substituir_meses'}
+                        onChange={() => setModoSubstituicao('substituir_meses')}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white block">
+                          Substituir apenas os meses desta planilha
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                          Mantém programações de outros meses já cadastradas e atualiza apenas os meses da planilha ({formatarMesesTexto(mesesSelecionados)}).
+                        </span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
                       <input
                         type="radio"
                         name="substituicao"
                         value="apenas_novos"
                         checked={modoSubstituicao === 'apenas_novos'}
                         onChange={() => setModoSubstituicao('apenas_novos')}
-                        className="text-blue-600 focus:ring-blue-500"
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
                       />
-                      <span>Adicionar mantendo as existentes (apenas novos registros)</span>
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white block">
+                          Adicionar mantendo as existentes (apenas novos registros)
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                          Acrescenta sem substituir registros existentes.
+                        </span>
+                      </div>
                     </label>
                   </div>
                 )}

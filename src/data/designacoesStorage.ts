@@ -139,6 +139,16 @@ export const CANONICAL_DESIGNACOES_SAMPLE_IDS = new Set(
   ESCALA_DESIGNACOES_CANONICA.map((i) => i.id)
 );
 
+export function isCanonicalSampleDesignacao(item: EscalaDesignacaoItem): boolean {
+  if (!item) return false;
+  if (CANONICAL_DESIGNACOES_SAMPLE_IDS.has(item.id)) return true;
+  if (/^(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(item.id)) return true;
+  if (item.mesChave === 'abril' && (item.indicador?.includes('Pedro / Fernando') || item.microfone?.includes('Vanderlei / Vilson'))) {
+    return true;
+  }
+  return false;
+}
+
 export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DESIGNACOES);
@@ -149,9 +159,9 @@ export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       // Se já existem registros reais importados pelo usuário, remove resíduos do template de exemplo
-      const temRegistrosReais = parsed.some((i) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(i.id));
+      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleDesignacao(i));
       if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(i.id));
+        const limpos = parsed.filter((i) => !isCanonicalSampleDesignacao(i));
         if (limpos.length > 0) {
           return limpos;
         }
@@ -207,7 +217,7 @@ export async function saveBulkEscalaDesignacoes(
   try {
     const current = getStoredEscalaDesignacoes();
     // Ao importar dados reais, descarta dados de exemplo antigos do template
-    const cleanedCurrent = current.filter((item) => !CANONICAL_DESIGNACOES_SAMPLE_IDS.has(item.id));
+    const cleanedCurrent = current.filter((item) => !isCanonicalSampleDesignacao(item));
     let updated: EscalaDesignacaoItem[];
 
     if (mode === 'replace_all') {

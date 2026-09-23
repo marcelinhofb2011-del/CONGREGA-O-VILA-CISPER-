@@ -366,6 +366,13 @@ export const CANONICAL_CAMPO_SAMPLE_IDS = new Set(
   CAMPO_PROGRAMACAO_INICIAL.map((i) => i.id)
 );
 
+export function isCanonicalSampleCampo(item: CampoProgramacao): boolean {
+  if (!item) return false;
+  if (CANONICAL_CAMPO_SAMPLE_IDS.has(item.id)) return true;
+  if (/^prog-campo-(1[0-1]|[1-9])$/.test(item.id)) return true;
+  return false;
+}
+
 export function getStoredCampoProgramacao(): CampoProgramacao[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CAMPO_PROGRAMACAO);
@@ -375,9 +382,9 @@ export function getStoredCampoProgramacao(): CampoProgramacao[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const temRegistrosReais = parsed.some((i) => !CANONICAL_CAMPO_SAMPLE_IDS.has(i.id));
+      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleCampo(i));
       if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !CANONICAL_CAMPO_SAMPLE_IDS.has(i.id));
+        const limpos = parsed.filter((i) => !isCanonicalSampleCampo(i));
         if (limpos.length > 0) {
           return limpos;
         }
@@ -443,7 +450,7 @@ export async function saveBulkCampoProgramacao(
   try {
     const current = getStoredCampoProgramacao();
     // Descarta dados de exemplo antigos do template ao importar dados reais
-    const cleanedCurrent = current.filter((item) => !CANONICAL_CAMPO_SAMPLE_IDS.has(item.id));
+    const cleanedCurrent = current.filter((item) => !isCanonicalSampleCampo(item));
     let updated: CampoProgramacao[];
 
     if (mode === 'replace_all') {
@@ -458,7 +465,7 @@ export async function saveBulkCampoProgramacao(
           const mesNum = parseInt(partes[1], 10);
           const nomes = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
           const nomeMes = nomes[mesNum - 1] || '';
-          return !Array.from(monthsSet).some((m) => m.includes(nomeMes) || (item.mesChave && m.includes(item.mesChave.toLowerCase())));
+          return !Array.from(monthsSet).some((m) => m.includes(nomeMes) || ((item as any).mesChave && m.includes((item as any).mesChave.toLowerCase())));
         }
         return true;
       });

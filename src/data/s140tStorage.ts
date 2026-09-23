@@ -346,6 +346,13 @@ export const CANONICAL_S140T_SAMPLE_IDS = new Set(
   S140T_DADOS_PADRAO.map((i) => i.id)
 );
 
+export function isCanonicalSampleS140T(item: S140TSemana): boolean {
+  if (!item) return false;
+  if (CANONICAL_S140T_SAMPLE_IDS.has(item.id)) return true;
+  if (item.id.startsWith('s140t-2026-04-')) return true;
+  return false;
+}
+
 export function getStoredS140TSemanas(): S140TSemana[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_S140T);
@@ -355,18 +362,17 @@ export function getStoredS140TSemanas(): S140TSemana[] {
       return S140T_DADOS_PADRAO;
     }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(S140T_DADOS_PADRAO));
-      return S140T_DADOS_PADRAO;
-    }
-    const temRegistrosReais = parsed.some((i) => !CANONICAL_S140T_SAMPLE_IDS.has(i.id));
-    if (temRegistrosReais) {
-      const limpos = parsed.filter((i) => !CANONICAL_S140T_SAMPLE_IDS.has(i.id));
-      if (limpos.length > 0) {
-        return limpos;
+    if (!Array.isArray(parsed) || parsed.length > 0) {
+      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleS140T(i));
+      if (temRegistrosReais) {
+        const limpos = parsed.filter((i) => !isCanonicalSampleS140T(i));
+        if (limpos.length > 0) {
+          return limpos;
+        }
       }
+      return parsed;
     }
-    return parsed;
+    return S140T_DADOS_PADRAO;
   } catch {
     return S140T_DADOS_PADRAO;
   }
@@ -489,7 +495,7 @@ export async function saveBulkS140TSemanas(
   try {
     const current = getStoredS140TSemanas();
     // Descarta dados de exemplo antigos do template ao importar dados reais
-    const cleanedCurrent = current.filter((item) => !CANONICAL_S140T_SAMPLE_IDS.has(item.id));
+    const cleanedCurrent = current.filter((item) => !isCanonicalSampleS140T(item));
     let updated: S140TSemana[];
 
     if (mode === 'replace_all') {

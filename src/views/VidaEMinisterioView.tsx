@@ -57,11 +57,18 @@ export const VidaEMinisterioView: React.FC = () => {
   const [semanaParaExcluir, setSemanaParaExcluir] = useState<string | null>(null);
 
   // Carregar semanas e estado de autenticação
-  const carregarDados = () => {
+  const carregarDados = (novoIdDesejado?: string) => {
     const lista = getStoredS140TSemanas();
     setSemanas(lista);
-    if (lista.length > 0 && !semanaIdAtiva) {
-      setSemanaIdAtiva(lista[0].id);
+    if (novoIdDesejado && lista.some((s) => s.id === novoIdDesejado)) {
+      setSemanaIdAtiva(novoIdDesejado);
+    } else if (lista.length > 0) {
+      setSemanaIdAtiva((prev) => {
+        if (!prev || !lista.some((s) => s.id === prev)) {
+          return lista[0].id;
+        }
+        return prev;
+      });
     }
   };
 
@@ -72,13 +79,30 @@ export const VidaEMinisterioView: React.FC = () => {
     const handleFirebaseUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<S140TSemana[]>;
       if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setSemanas(customEvent.detail);
+        const novas = customEvent.detail;
+        setSemanas(novas);
+        if (novas.length > 0) {
+          setSemanaIdAtiva((prev) => {
+            if (!prev || !novas.some((s) => s.id === prev)) {
+              return novas[0].id;
+            }
+            return prev;
+          });
+        }
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'vila_cisper_programacao_s140t') {
+        carregarDados();
       }
     };
 
     window.addEventListener('s140t-firebase-updated', handleFirebaseUpdate);
+    window.addEventListener('storage', handleStorageChange);
     return () => {
       window.removeEventListener('s140t-firebase-updated', handleFirebaseUpdate);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
@@ -675,7 +699,13 @@ export const VidaEMinisterioView: React.FC = () => {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         modulo="vida-ministerio"
-        onImportadoComSucesso={() => carregarDados()}
+        onImportadoComSucesso={(_total, _meses) => {
+          const lista = getStoredS140TSemanas();
+          setSemanas(lista);
+          if (lista.length > 0) {
+            setSemanaIdAtiva(lista[0].id);
+          }
+        }}
       />
     </div>
   );

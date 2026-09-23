@@ -122,6 +122,14 @@ export const CANONICAL_DISCURSOS_SAMPLE_IDS = new Set(
   DISCURSOS_CANONICOS.map((i) => i.id)
 );
 
+export function isCanonicalSampleDiscurso(item: DiscursoBiblicoItem): boolean {
+  if (!item) return false;
+  if (CANONICAL_DISCURSOS_SAMPLE_IDS.has(item.id)) return true;
+  if (/^disc-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(item.id)) return true;
+  if (item.mes?.toLowerCase().includes('abril') && item.tema?.includes('verdadeira religião')) return true;
+  return false;
+}
+
 export function getStoredDiscursosBiblicos(): DiscursoBiblicoItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DISCURSOS);
@@ -131,9 +139,9 @@ export function getStoredDiscursosBiblicos(): DiscursoBiblicoItem[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const temRegistrosReais = parsed.some((i) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(i.id));
+      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleDiscurso(i));
       if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(i.id));
+        const limpos = parsed.filter((i) => !isCanonicalSampleDiscurso(i));
         if (limpos.length > 0) {
           return limpos;
         }
@@ -187,7 +195,7 @@ export async function saveBulkDiscursosBiblicos(
   try {
     const current = getStoredDiscursosBiblicos();
     // Descarta dados de exemplo antigos do template ao importar dados reais
-    const cleanedCurrent = current.filter((item) => !CANONICAL_DISCURSOS_SAMPLE_IDS.has(item.id));
+    const cleanedCurrent = current.filter((item) => !isCanonicalSampleDiscurso(item));
     let updated: DiscursoBiblicoItem[];
 
     if (mode === 'replace_all') {

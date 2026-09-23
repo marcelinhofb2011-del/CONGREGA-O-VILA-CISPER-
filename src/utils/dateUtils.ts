@@ -115,12 +115,38 @@ export function parseMesAno(mesStr?: string): { month: number; year: number } {
   return { month, year };
 }
 
-// Analisa strings de datas como "Domingo 04/01", "20/09", "15/20" e retorna Date com hora 23:59:59
+// Analisa strings de datas como "Domingo 04/01", "20/09", "15/20", "7/11", "2026-09-20" e retorna Date com hora 23:59:59
 export function parseItemDate(diaOrDataStr: string, mesStr?: string): Date | null {
   if (!diaOrDataStr) return null;
   const currentYear = new Date().getFullYear();
 
-  // Caso 1: Formato com barra contendo dia e mês (ex: "Domingo 20/09" ou "20/09/2026")
+  // Caso 0: Formato ISO YYYY-MM-DD
+  const isoMatch = diaOrDataStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10) - 1;
+    const day = parseInt(isoMatch[3], 10);
+    return new Date(year, month, day, 23, 59, 59);
+  }
+
+  // Caso 1: Se mesStr é informado com um nome de mês conhecido (ex: "Janeiro"),
+  // qualquer padrão numérico em diaOrDataStr (ex: "7/11", "04/08", "14/18", "4", "28")
+  // refere-se aos DIAS daquele mês!
+  if (mesStr) {
+    const { month, year } = parseMesAno(mesStr);
+    const nums = diaOrDataStr.match(/\d+/g);
+    if (nums && nums.length > 0) {
+      // Se não houver ano explícito de 4 dígitos em diaOrDataStr, os números são dias
+      const hasFullYear = diaOrDataStr.match(/\/\d{4}/);
+      if (!hasFullYear) {
+        // Usa o primeiro dia para ordenação / referência
+        const day = parseInt(nums[0], 10);
+        return new Date(year, month, Math.min(day, 31), 23, 59, 59);
+      }
+    }
+  }
+
+  // Caso 2: Formato com barra contendo dia e mês explícitos (ex: "Domingo 20/09" ou "20/09/2026")
   const ddmmyyyyMatch = diaOrDataStr.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
   if (ddmmyyyyMatch) {
     const day = parseInt(ddmmyyyyMatch[1], 10);
@@ -133,11 +159,10 @@ export function parseItemDate(diaOrDataStr: string, mesStr?: string): Date | nul
     return new Date(year || currentYear, month, day, 23, 59, 59);
   }
 
-  // Caso 2: Contém apenas dias numéricos (ex: "15/20" ou "4" em escalas de limpeza)
+  // Caso 3: Contém apenas dias numéricos (ex: "15/20" ou "4" em escalas de limpeza sem mesStr)
   const nums = diaOrDataStr.match(/\d+/g);
   if (nums && nums.length > 0 && mesStr) {
-    // Pega o último dia do período para saber até quando a atividade é válida
-    const day = parseInt(nums[nums.length - 1], 10);
+    const day = parseInt(nums[0], 10);
     const { month, year } = parseMesAno(mesStr);
     return new Date(year, month, day, 23, 59, 59);
   }

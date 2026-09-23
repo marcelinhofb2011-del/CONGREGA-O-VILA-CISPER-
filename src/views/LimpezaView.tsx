@@ -6,7 +6,6 @@ import {
   getStoredGruposMembros,
   saveStoredLimpezaEscala,
   deleteStoredLimpezaEscala,
-  resetLimpezaToSample,
 } from '../data/limpezaStorage';
 import {
   isAdminAuthenticated,
@@ -14,52 +13,52 @@ import {
   verifyAdminPassword,
 } from '../data/territoriosStorage';
 import {
-  Sparkles,
   Lock,
   Unlock,
   Plus,
-  Printer,
   Calendar,
-  RotateCcw,
-  ShieldCheck,
   Eye,
   EyeOff,
   X,
   User,
   Users,
   CheckCircle2,
+  AlertCircle,
   Edit2,
   Trash2,
   Clock,
   MapPin,
-  Info,
   FileSpreadsheet,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { BulkImportExportModal } from '../components/BulkImportExportModal';
 import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
+import { parseItemDate } from '../utils/dateUtils';
 
 export const LimpezaView: React.FC = () => {
   const [escalas, setEscalas] = useState<LimpezaEscalaItem[]>([]);
+  const [escalaIdAtiva, setEscalaIdAtiva] = useState<string>('');
   const [grupos] = useState<GrupoLimpezaMembros[]>(getStoredGruposMembros());
 
+  // Autenticação do Responsável
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
-  const [isImportPlanilhaOpen, setIsImportPlanilhaOpen] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
 
-  // Filtros
-  const [irmaoSelecionado, setIrmaoSelecionado] = useState<string>('');
-  const [mesFiltro, setMesFiltro] = useState<string>('todos');
-  const [abaAtiva, setAbaAtiva] = useState<'escala' | 'grupos'>('escala');
-
-  // Modal de edição / criação
+  // Modais
+  const [isImportPlanilhaOpen, setIsImportPlanilhaOpen] = useState<boolean>(false);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [itemParaEditar, setItemParaEditar] = useState<LimpezaEscalaItem | null>(null);
+  const [itemParaExcluir, setItemParaExcluir] = useState<LimpezaEscalaItem | null>(null);
 
-  // Formulário
+  // Filtros e Navegação
+  const [abaAtiva, setAbaAtiva] = useState<'escala' | 'grupos'>('escala');
+  const [buscaIrmao, setBuscaIrmao] = useState<string>('');
+
+  // Formulário de Cadastro / Edição
   const [formData, setFormData] = useState<{
     mes: string;
     dias: string;
@@ -78,6 +77,7 @@ export const LimpezaView: React.FC = () => {
     ehEspecial: false,
   });
 
+  // Mensagens de Feedback
   const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
   const carregarDados = () => {
@@ -95,7 +95,8 @@ export const LimpezaView: React.FC = () => {
     const handleStorageChange = (e: StorageEvent) => {
       if (
         e.key === 'vila_cisper_limpeza_escalas_2026' ||
-        e.key === 'vila_cisper_admin_auth'
+        e.key === 'vila_cisper_admin_auth' ||
+        !e.key
       ) {
         carregarDados();
       }
@@ -110,7 +111,7 @@ export const LimpezaView: React.FC = () => {
     };
   }, []);
 
-  // Meses únicos
+  // Meses únicos disponíveis
   const mesesDisponiveis = useMemo(() => {
     const map = new Map<string, string>();
     escalas.forEach((item) => {
@@ -121,100 +122,105 @@ export const LimpezaView: React.FC = () => {
     return Array.from(map.entries()).map(([chave, rotulo]) => ({ chave, rotulo }));
   }, [escalas]);
 
-  // Lista de todos os publicadores da congregação (dos 3 grupos)
-  const todosPublicadores = useMemo(() => {
-    const nomes = new Set<string>();
-    grupos.forEach((g) => {
-      g.membros.forEach((m) => nomes.add(m.trim()));
-      // Adiciona também os nomes dos dirigentes se houver
-      g.superintendentes.split(/[/,eE]/).forEach((p) => {
-        const limpo = p.trim();
-        if (limpo.length > 2) nomes.add(limpo);
+  // Ordenação cronológica das escalas
+  const escalasOrdenadas = useMemo(() => {
+    return [...escalas].sort((a, b) => {
+      const dtA = parseItemDate(a.dias, a.mes);
+      const dtB = parseItemDate(b.dias, b.mes);
+      if (dtA && dtB) {
+        return dtA.getTime() - dtB.getTime();
+      }
+      if (dtA) return -1;
+      if (dtB) return 1;
+      return a.id.localeCompare(b.id);
+    });
+  }, [escalas]);
+
+  // Identificação da próxima escala futura (data >= hoje)
+  const proximoIndex = useMemo(() => {
+    if (escalasOrdenadas.length === 0) return -1;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    return escalasOrdenadas.findIndex((item) => {
+      const dt = parseItemDate(item.dias, item.mes);
+      if (!dt) return false;
+      return dt.getTime() >= hoje.getTime();
+    });
+  }, [escalasOrdenadas]);
+
+  // Ao carregar ou atualizar lista, seleciona automaticamente a próxima escala futura
+  useEffect(() => {
+    if (escalasOrdenadas.length > 0) {
+      setEscalaIdAtiva((prev) => {
+        if (!prev || !escalasOrdenadas.some((e) => e.id === prev)) {
+          return proximoIndex !== -1
+            ? escalasOrdenadas[proximoIndex].id
+            : escalasOrdenadas[escalasOrdenadas.length - 1].id;
+        }
+        return prev;
       });
-    });
-    return Array.from(nomes).sort((a, b) => a.localeCompare(b));
-  }, [grupos]);
-
-  // Identificar o grupo do irmão selecionado
-  const grupoDoIrmao = useMemo(() => {
-    if (!irmaoSelecionado) return null;
-    const n = irmaoSelecionado.trim().toLowerCase();
-    for (const g of grupos) {
-      const achou = g.membros.some((m) => m.toLowerCase().includes(n) || n.includes(m.toLowerCase()));
-      if (achou || g.superintendentes.toLowerCase().includes(n)) {
-        return g;
-      }
     }
-    return null;
-  }, [irmaoSelecionado, grupos]);
+  }, [escalasOrdenadas, proximoIndex]);
 
-  // Resumo de datas em que o grupo do irmão limpa
-  const resumoIrmao = useMemo(() => {
-    if (!irmaoSelecionado || !grupoDoIrmao) return null;
-    const grupoKey = `GRUPO ${grupoDoIrmao.numero}`.toLowerCase();
-    const datasGrupo: string[] = [];
+  // Escala selecionada para exibição no quadro
+  const escalaAtiva = useMemo(() => {
+    if (escalasOrdenadas.length === 0) return null;
+    const encontrada = escalasOrdenadas.find((e) => e.id === escalaIdAtiva);
+    if (encontrada) return encontrada;
+    return proximoIndex !== -1 ? escalasOrdenadas[proximoIndex] : escalasOrdenadas[0];
+  }, [escalasOrdenadas, escalaIdAtiva, proximoIndex]);
 
-    escalas.forEach((e) => {
-      if (e.grupo.toLowerCase().includes(grupoKey)) {
-        datasGrupo.push(`${e.dias} de ${e.mes} (${e.diasSemana})`);
-      }
-    });
+  // Índice para navegação anterior / próximo
+  const indiceEscalaAtual = useMemo(() => {
+    if (!escalaAtiva) return -1;
+    return escalasOrdenadas.findIndex((e) => e.id === escalaAtiva.id);
+  }, [escalasOrdenadas, escalaAtiva]);
 
-    return {
-      grupoNome: grupoDoIrmao.nomeGrupo,
-      superintendentes: grupoDoIrmao.superintendentes,
-      totalLimpezas: datasGrupo.length,
-      datasGrupo,
-    };
-  }, [irmaoSelecionado, grupoDoIrmao, escalas]);
-
-  // Escalas agrupadas por mês
-  const escalasAgrupadas = useMemo(() => {
-    const mapa: { [mes: string]: LimpezaEscalaItem[] } = {};
-    escalas.forEach((item) => {
-      if (mesFiltro !== 'todos' && item.mesChave !== mesFiltro) return;
-      if (!mapa[item.mes]) mapa[item.mes] = [];
-      mapa[item.mes].push(item);
-    });
-    return mapa;
-  }, [escalas, mesFiltro]);
-
-  // Autenticação
-  const handleOpenAuth = () => {
-    setPasswordInput('');
-    setAuthError('');
-    setShowAuthModal(true);
+  const handleProximaEscala = () => {
+    if (indiceEscalaAtual < escalasOrdenadas.length - 1) {
+      setEscalaIdAtiva(escalasOrdenadas[indiceEscalaAtual + 1].id);
+    }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleEscalaAnterior = () => {
+    if (indiceEscalaAtual > 0) {
+      setEscalaIdAtiva(escalasOrdenadas[indiceEscalaAtual - 1].id);
+    }
+  };
+
+  // Handlers de Autenticação
+  const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (verifyAdminPassword(passwordInput)) {
       setAdminAuthenticated(true);
       setIsAdmin(true);
       setShowAuthModal(false);
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Acesso do responsável pela limpeza concedido.' });
-      setTimeout(() => setFeedbackMsg(null), 4000);
+      setPasswordInput('');
+      setAuthError('');
+      setFeedbackMsg({ tipo: 'sucesso', texto: 'Acesso de responsável concedido.' });
+      setTimeout(() => setFeedbackMsg(null), 3000);
     } else {
-      setAuthError('Senha incorreta.');
+      setAuthError('Senha incorreta. Tente novamente.');
     }
   };
 
   const handleLogout = () => {
     setAdminAuthenticated(false);
     setIsAdmin(false);
-    setFeedbackMsg({ tipo: 'sucesso', texto: 'Modo de gestão finalizado.' });
-    setTimeout(() => setFeedbackMsg(null), 3000);
+    setFeedbackMsg({ tipo: 'sucesso', texto: 'Modo responsável desativado.' });
+    setTimeout(() => setFeedbackMsg(null), 2500);
   };
 
-  // Edição
+  // Handlers de Criação / Edição
   const handleOpenCreate = () => {
     setItemParaEditar(null);
     setFormData({
-      mes: mesFiltro !== 'todos' ? (mesesDisponiveis.find((m) => m.chave === mesFiltro)?.rotulo || 'Janeiro') : 'Janeiro',
+      mes: mesesDisponiveis.length > 0 ? mesesDisponiveis[0].rotulo : 'Janeiro',
       dias: '',
       diasSemana: 'Quarta Feira e Domingo',
       grupo: 'GRUPO 1',
-      responsaveis: 'SAMUEL E GEOVANE',
+      responsaveis: '',
       observacao: '',
       ehEspecial: false,
     });
@@ -228,17 +234,17 @@ export const LimpezaView: React.FC = () => {
       dias: item.dias,
       diasSemana: item.diasSemana,
       grupo: item.grupo,
-      responsaveis: item.responsaveis,
+      responsaveis: item.responsaveis || '',
       observacao: item.observacao || '',
       ehEspecial: !!item.ehEspecial,
     });
     setIsEditorOpen(true);
   };
 
-  const handleSaveItem = (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.dias.trim() || !formData.grupo.trim()) {
-      alert('Informe os Dias e o Grupo.');
+      setFeedbackMsg({ tipo: 'erro', texto: 'Informe os dias e o grupo responsável.' });
       return;
     }
 
@@ -255,185 +261,132 @@ export const LimpezaView: React.FC = () => {
       ehEspecial: formData.ehEspecial,
     };
 
-    const res = saveStoredLimpezaEscala(item);
+    const res = await saveStoredLimpezaEscala(item);
     if (res.success && res.data) {
       setEscalas(res.data);
       setIsEditorOpen(false);
       setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala de limpeza salva com sucesso!' });
-      setTimeout(() => setFeedbackMsg(null), 3500);
+      setTimeout(() => setFeedbackMsg(null), 3000);
+    } else {
+      setFeedbackMsg({ tipo: 'erro', texto: res.error || 'Erro ao salvar escala.' });
     }
   };
 
-  const handleDeleteItem = (id: string, dias: string, mes: string) => {
-    if (window.confirm(`Deseja remover a escala de ${mes} (${dias})?`)) {
-      const res = deleteStoredLimpezaEscala(id);
-      if (res.success && res.data) {
-        setEscalas(res.data);
-        setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala removida.' });
-        setTimeout(() => setFeedbackMsg(null), 3000);
-      }
+  const handleConfirmDelete = async () => {
+    if (!itemParaExcluir) return;
+    const res = await deleteStoredLimpezaEscala(itemParaExcluir.id);
+    if (res.success && res.data) {
+      setEscalas(res.data);
+      setItemParaExcluir(null);
+      setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala de limpeza excluída.' });
+      setTimeout(() => setFeedbackMsg(null), 3000);
+    } else {
+      setFeedbackMsg({ tipo: 'erro', texto: res.error || 'Erro ao excluir escala.' });
     }
-  };
-
-  const handleResetToOfficial = () => {
-    if (window.confirm('Deseja restaurar a escala e composição oficial de limpeza de 2026?')) {
-      const canonico = resetLimpezaToSample();
-      setEscalas(canonico);
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Escala oficial de limpeza restaurada!' });
-      setTimeout(() => setFeedbackMsg(null), 3500);
-    }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleBulkSuccess = (qtd: number, modo: string) => {
-    setEscalas(getStoredLimpezaEscalas());
-    const modoTexto =
-      modo === 'append'
-        ? 'adicionadas às existentes'
-        : modo === 'replace_month'
-        ? 'substituindo o mês selecionado'
-        : 'substituição completa de escalas';
-    setFeedbackMsg({
-      tipo: 'sucesso',
-      texto: `Importação em lote de limpeza concluída com sucesso! ${qtd} escalas processadas (${modoTexto}).`,
-    });
-    setTimeout(() => setFeedbackMsg(null), 4000);
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Barra Superior de Identificação e Modos */}
-      <header className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900 print:hidden">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Congregação Vila Cisper (67744)
+    <div className="mx-auto w-full max-w-3xl space-y-8 pb-16 pt-2">
+      {/* ------------------------------------------------------------- */}
+      {/* CABEÇALHO DO MÓDULO                                           */}
+      {/* ------------------------------------------------------------- */}
+      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+              Congregação: Vila Cisper
             </span>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Programa de Limpeza 2026
-            </span>
+            <h1 className="mt-1 text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+              GRUPOS DE LIMPEZA
+            </h1>
           </div>
-          <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-            Limpeza do Salão do Reino
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-            Escala semanal após as reuniões, limpeza semanal geral e limpeza trimestral dos grupos.
-          </p>
+
+          {/* Botões do Responsável */}
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-importar-planilha-limpeza"
+                  onClick={() => setIsImportPlanilhaOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
+                  title="Importar planilha trimestral de Grupos de Limpeza"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>IMPORTAR PLANILHA</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-cadastrar-limpeza"
+                  onClick={handleOpenCreate}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-xs hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Cadastrar Programação</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-sair-responsavel-limpeza"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                  title="Sair do modo responsável"
+                >
+                  <Unlock className="h-3.5 w-3.5 text-green-600" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                id="btn-login-responsavel-limpeza"
+                onClick={() => {
+                  setPasswordInput('');
+                  setAuthError('');
+                  setShowAuthModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 transition-colors"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                <span>Responsável</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Controles de Acesso e Impressão */}
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
+        {/* Feedback Alert */}
+        {feedbackMsg && (
+          <div
+            className={`mt-4 flex items-center justify-between rounded-xl p-3.5 text-sm font-bold ${
+              feedbackMsg.tipo === 'sucesso'
+                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {feedbackMsg.tipo === 'sucesso' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{feedbackMsg.texto}</span>
+            </div>
             <button
               type="button"
-              id="btn-importar-planilha-limpeza"
-              onClick={() => setIsImportPlanilhaOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700"
-              title="Importar planilha trimestral de Grupo de Limpeza"
+              onClick={() => setFeedbackMsg(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
-              <FileSpreadsheet className="h-4 w-4" />
-              <span>IMPORTAR PLANILHA</span>
+              <X className="h-4 w-4" />
             </button>
-          )}
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            title="Imprimir quadro ou exportar em PDF"
-          >
-            <Printer className="h-4 w-4" />
-            <span>Imprimir / PDF</span>
-          </button>
-
-          {isAdmin ? (
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                <Unlock className="h-4 w-4 text-emerald-600" />
-                <span className="hidden sm:inline">Modo Gestão:</span> Responsável Ativo
-              </span>
-              <button
-                onClick={handleLogout}
-                className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                title="Sair do modo de gestão"
-              >
-                Sair
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleOpenAuth}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:bg-emerald-600 dark:hover:bg-emerald-700"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              <span>Acesso do Responsável</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
-      {/* Feedback Mensagem */}
-      {feedbackMsg && (
-        <div
-          className={`flex items-center justify-between rounded-lg p-3 text-sm print:hidden ${
-            feedbackMsg.tipo === 'sucesso'
-              ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
-              : 'border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-            <span>{feedbackMsg.texto}</span>
-          </div>
-          <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-slate-600">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Barra de Ações Administrativas (Responsável) */}
-      {isAdmin && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 p-3.5 dark:border-emerald-800 dark:bg-emerald-950/20 print:hidden">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">
-              Painel do Responsável pela Limpeza e Manutenção do Salão
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-slate-800 dark:text-emerald-300"
-              title="Importar planilhas em lote do Excel ou Google Sheets"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Importar / Exportar Planilha</span>
-            </button>
-            <button
-              onClick={handleOpenCreate}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-emerald-800"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>+ Nova Escala de Limpeza</span>
-            </button>
-            <button
-              onClick={handleResetToOfficial}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              title="Restaurar a escala oficial completa de limpeza de 2026"
-            >
-              <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
-              <span>Restaurar Modelo Oficial</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Navegação entre Visualização de Escalas vs. Composição dos Grupos */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 print:hidden">
+      {/* ------------------------------------------------------------- */}
+      {/* NAVEGAÇÃO DE SUB-ABAS (ESCALAS VS COMPOSIÇÃO DOS GRUPOS)      */}
+      {/* ------------------------------------------------------------- */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800">
         <button
+          type="button"
           onClick={() => setAbaAtiva('escala')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition sm:text-sm ${
             abaAtiva === 'escala'
@@ -442,9 +395,10 @@ export const LimpezaView: React.FC = () => {
           }`}
         >
           <Calendar className="h-4 w-4" />
-          <span>Escalas de Limpeza Mensal</span>
+          <span>Escalas de Limpeza</span>
         </button>
         <button
+          type="button"
           onClick={() => setAbaAtiva('grupos')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition sm:text-sm ${
             abaAtiva === 'grupos'
@@ -453,360 +407,368 @@ export const LimpezaView: React.FC = () => {
           }`}
         >
           <Users className="h-4 w-4" />
-          <span>Composição dos Grupos (Membros)</span>
+          <span>Composição dos Grupos</span>
         </button>
       </div>
 
-      {/* Barra de Filtros e Busca "Consultar Meu Grupo / Designação" */}
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm md:grid-cols-12 dark:border-slate-800 dark:bg-slate-900 print:hidden">
-        <div className="md:col-span-6 lg:col-span-7">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-            <User className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Consultar Meu Grupo e Minhas Limpezas:</span>
-          </label>
-          <div className="flex items-center gap-2">
-            <select
-              value={irmaoSelecionado}
-              onChange={(e) => setIrmaoSelecionado(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="">-- Selecione seu nome para localizar seu grupo e datas --</option>
-              {todosPublicadores.map((nome) => (
-                <option key={nome} value={nome}>
-                  {nome}
-                </option>
-              ))}
-            </select>
-            {irmaoSelecionado && (
+      {/* ------------------------------------------------------------- */}
+      {/* CONTEÚDO DA ABA 1: ESCALAS DE LIMPEZA                         */}
+      {/* ------------------------------------------------------------- */}
+      {abaAtiva === 'escala' && (
+        <>
+          {/* ------------------------------------------------------------- */}
+          {/* BUSCA RÁPIDA DE IRMÃO OU GRUPO                                */}
+          {/* ------------------------------------------------------------- */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={buscaIrmao}
+              onChange={(e) => setBuscaIrmao(e.target.value)}
+              placeholder="Consultar irmão, grupo ou data..."
+              className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            />
+            {buscaIrmao && (
               <button
-                onClick={() => setIrmaoSelecionado('')}
-                className="rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                title="Limpar seleção"
+                type="button"
+                onClick={() => setBuscaIrmao('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                Limpar
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
-        </div>
 
-        {abaAtiva === 'escala' && (
-          <div className="md:col-span-6 lg:col-span-5">
-            <label className="mb-1 flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-              <Calendar className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Visualizar Mês:</span>
-            </label>
-            <select
-              value={mesFiltro}
-              onChange={(e) => setMesFiltro(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="todos">Todos os Meses</option>
-              {mesesDisponiveis.map((m) => (
-                <option key={m.chave} value={m.chave}>
-                  {m.rotulo}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+          {/* ------------------------------------------------------------- */}
+          {/* SELETOR SIMPLES DA DATA (PADRÃO VIDA E MINISTÉRIO)            */}
+          {/* ------------------------------------------------------------- */}
+          {escalasOrdenadas.length > 0 && escalaAtiva ? (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleEscalaAnterior}
+                    disabled={indiceEscalaAtual <= 0}
+                    className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    aria-label="Escala anterior"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleProximaEscala}
+                    disabled={indiceEscalaAtual >= escalasOrdenadas.length - 1}
+                    className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    aria-label="Próxima escala"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                  <div className="ml-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Escala selecionada:
+                    </span>
+                    <div className="text-base font-black text-slate-900 dark:text-white">
+                      {escalaAtiva.dias} de {escalaAtiva.mes}
+                    </div>
+                  </div>
+                </div>
 
-      {/* Card de Resumo do Irmão */}
-      {resumoIrmao && (
-        <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50/40 p-4 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/30 dark:to-teal-950/20 print:hidden">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow">
-                <Sparkles className="h-5 w-5" />
+                {/* Dropdown direto para escolher a data */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={escalaAtiva.id}
+                    onChange={(e) => setEscalaIdAtiva(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 max-w-xs"
+                  >
+                    {escalasOrdenadas.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.dias} de {item.mes} - {item.grupo}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Ações administrativas para a escala selecionada */}
+                  {isAdmin && (
+                    <div className="flex items-center gap-1.5 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(escalaAtiva)}
+                        className="rounded-lg border border-slate-300 bg-white p-2 text-emerald-800 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-800 dark:text-emerald-300"
+                        title="Editar escala"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setItemParaExcluir(escalaAtiva)}
+                        className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
+                        title="Excluir escala"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-emerald-950 dark:text-emerald-200">
-                  {irmaoSelecionado} • {resumoIrmao.grupoNome}
-                </h2>
-                <p className="text-xs text-emerald-800/80 dark:text-emerald-300/80">
-                  Superintendentes do Grupo: <span className="font-semibold">{resumoIrmao.superintendentes}</span>
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <span className="rounded-md border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-300">
-                Seu grupo está escalado em {resumoIrmao.totalLimpezas} períodos de 2026
-              </span>
+              {/* ------------------------------------------------------------- */}
+              {/* QUADRO DIGITAL DA ESCALA SELECIONADA                          */}
+              {/* ------------------------------------------------------------- */}
+              <section
+                id="card-escala-limpeza-selecionada"
+                className="rounded-2xl border-2 border-emerald-600 bg-white p-6 shadow-sm dark:border-emerald-500 dark:bg-slate-900"
+              >
+                <div className="flex items-center justify-between border-b border-emerald-200 pb-3 dark:border-emerald-900/60">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-emerald-700 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white dark:bg-emerald-600">
+                      {proximoIndex !== -1 && escalaAtiva.id === escalasOrdenadas[proximoIndex]?.id
+                        ? 'Próxima Limpeza'
+                        : 'Escala de Limpeza'}
+                    </span>
+                    {escalaAtiva.ehEspecial && (
+                      <span className="rounded-md bg-amber-500 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
+                        Especial
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {/* Mês e Dias */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      <Calendar className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Data / Dias:
+                      </span>
+                      <span className="text-lg font-black text-slate-900 dark:text-white">
+                        {escalaAtiva.dias} de {escalaAtiva.mes}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grupo */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Grupo Designado:
+                      </span>
+                      <span className="text-lg font-black text-emerald-700 dark:text-emerald-400">
+                        {escalaAtiva.grupo}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Reuniões / Frequência */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Reuniões:
+                      </span>
+                      <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                        {escalaAtiva.diasSemana}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Responsáveis */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Responsáveis:
+                      </span>
+                      <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                        {escalaAtiva.responsaveis || '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Observação se houver */}
+                {escalaAtiva.observacao && (
+                  <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-800/60 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    <span className="font-bold">Observação: </span>
+                    {escalaAtiva.observacao}
+                  </div>
+                )}
+              </section>
             </div>
-          </div>
-        </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-800">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Nenhuma escala de limpeza cadastrada no momento.
+              </p>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreate}
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Cadastrar Primeira Programação</span>
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
 
-      {/* ========================================================================= */}
-      {/* ABA 1: ESCALA DE LIMPEZA MENSAL (IDÊNTICA AO PDF VERDE DA CONGREGAÇÃO)    */}
-      {/* ========================================================================= */}
-      {abaAtiva === 'escala' && (
-        <div className="overflow-hidden rounded-xl border-2 border-emerald-600 bg-white shadow-md dark:border-emerald-700 dark:bg-slate-900 print:border-none print:shadow-none">
-          {/* Banner do Cabeçalho Oficial */}
-          <div className="border-b-2 border-emerald-700 bg-gradient-to-r from-emerald-700 via-emerald-600 to-emerald-800 p-4 text-white sm:p-5">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/30 bg-white/10 text-white shadow-inner">
-                  <Sparkles className="h-6 w-6" />
-                </div>
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-200">
-                    Congregação Vila Cisper (67744) • Ano 2026
-                  </span>
-                  <h2 className="text-xl font-black tracking-wide uppercase sm:text-2xl">
-                    LIMPEZA SALÃO DO REINO
-                  </h2>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="inline-block rounded-md border border-white/20 bg-emerald-900/50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-emerald-100">
-                  Quadro de Limpeza
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tabelas por Mês */}
-          <div className="divide-y divide-emerald-200 dark:divide-slate-800">
-            {Object.keys(escalasAgrupadas).length === 0 ? (
-              <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-                <p className="text-sm font-semibold">Nenhuma programação cadastrada no momento.</p>
-              </div>
-            ) : (
-              (Object.entries(escalasAgrupadas) as [string, LimpezaEscalaItem[]][]).map(([mesTitulo, itensDoMes]) => (
-              <div key={mesTitulo} className="p-4 sm:p-5">
-                {/* Barra do Mês estilo PDF */}
-                <div className="mb-3 rounded-lg bg-emerald-600 px-4 py-2 text-center font-black uppercase tracking-widest text-white shadow-sm">
-                  {mesTitulo}
-                </div>
-
-                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-800 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200">
-                        <th className="w-24 p-2.5 font-bold uppercase">DIAS</th>
-                        <th className="p-2.5 font-bold uppercase">DIAS DA SEMANA</th>
-                        <th className="w-36 p-2.5 font-bold uppercase">GRUPO</th>
-                        <th className="p-2.5 font-bold uppercase">RESPONSÁVEIS</th>
-                        {isAdmin && <th className="w-20 p-2.5 text-center font-bold uppercase print:hidden">Ações</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {itensDoMes.map((item, idx) => {
-                        const ehGrupoDoIrmao = grupoDoIrmao && item.grupo.toLowerCase().includes(`grupo ${grupoDoIrmao.numero}`.toLowerCase());
-                        const ehEspecial = item.ehEspecial;
-
-                        return (
-                          <tr
-                            key={item.id}
-                            className={`transition ${
-                              ehGrupoDoIrmao
-                                ? 'bg-amber-100/90 font-bold text-amber-950 dark:bg-amber-950/40 dark:text-amber-100'
-                                : ehEspecial
-                                ? 'bg-rose-50 font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
-                                : idx % 2 === 0
-                                ? 'bg-white dark:bg-slate-900'
-                                : 'bg-slate-50/70 dark:bg-slate-900/60'
-                            } hover:bg-emerald-50/60 dark:hover:bg-emerald-950/20`}
-                          >
-                            <td className="p-2.5 font-bold text-slate-900 dark:text-slate-100">
-                              {item.dias}
-                            </td>
-                            <td className="p-2.5">
-                              {item.diasSemana}
-                            </td>
-                            <td className="p-2.5 font-bold">
-                              <span
-                                className={`rounded px-2 py-0.5 ${
-                                  ehGrupoDoIrmao
-                                    ? 'bg-amber-300 text-amber-950 dark:bg-amber-800 dark:text-amber-100'
-                                    : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
-                                }`}
-                              >
-                                {item.grupo}
-                              </span>
-                            </td>
-                            <td className="p-2.5 font-semibold">
-                              {item.responsaveis}
-                            </td>
-                            {isAdmin && (
-                              <td className="p-2.5 text-center print:hidden">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() => handleOpenEdit(item)}
-                                    className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-emerald-700 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
-                                    title="Editar escala"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteItem(item.id, item.dias, item.mes)}
-                                    className="rounded p-1 text-slate-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
-                                    title="Remover escala"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )))}
-          </div>
-
-          {/* ========================================================================= */}
-          {/* PROGRAMA DE LIMPEZA DO SALÃO DO REINO (SEMANAL E TRIMESTRAL)              */}
-          {/* ========================================================================= */}
-          <div className="border-t-2 border-emerald-300 bg-emerald-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
-            <div className="mb-3 rounded-lg bg-emerald-700 px-4 py-1.5 text-center font-bold uppercase tracking-wider text-white">
-              PROGRAMA DE LIMPEZA DO SALÃO DO REINO 2026
-            </div>
-
-            <div className="space-y-3 text-xs sm:text-sm">
-              {/* Limpeza Semanal */}
-              <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <span className="font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                  LIMPEZA SEMANAL GERAL (TODOS OS GRUPOS):
-                </span>
-                <p className="mt-1 text-slate-700 dark:text-slate-300">
-                  <strong>JANEIRO • ABRIL • JULHO • OUTUBRO:</strong> CISPER — TODOS OS GRUPOS SÁBADO APÓS O CAMPO
-                </p>
-              </div>
-
-              {/* Limpeza Trimestral */}
-              <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <span className="font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                  LIMPEZA TRIMESTRAL GERAL:
-                </span>
-                <p className="mt-1 text-slate-700 dark:text-slate-300">
-                  <strong>JANEIRO E ABRIL:</strong> CISPER — TODOS OS GRUPOS • SÁBADO ÀS 08:00 HORAS
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* ABA 2: COMPOSIÇÃO DOS GRUPOS (TODOS OS PUBLICADORES CADASTRADOS NO PDF)   */}
-      {/* ========================================================================= */}
+      {/* ------------------------------------------------------------- */}
+      {/* CONTEÚDO DA ABA 2: COMPOSIÇÃO DOS GRUPOS                      */}
+      {/* ------------------------------------------------------------- */}
       {abaAtiva === 'grupos' && (
         <div className="space-y-6">
-          {grupos.map((grp) => {
-            const ehMeuGrupo = grupoDoIrmao && grupoDoIrmao.id === grp.id;
-            return (
-              <div
-                key={grp.id}
-                className={`overflow-hidden rounded-xl border-2 ${
-                  ehMeuGrupo
-                    ? 'border-emerald-600 bg-emerald-50/40 dark:border-emerald-500 dark:bg-emerald-950/20'
-                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
-                } shadow-sm`}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={buscaIrmao}
+              onChange={(e) => setBuscaIrmao(e.target.value)}
+              placeholder="Localizar irmão para ver a qual grupo pertence..."
+              className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            />
+            {buscaIrmao && (
+              <button
+                type="button"
+                onClick={() => setBuscaIrmao('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                {/* Header do Grupo */}
-                <div className="flex flex-col border-b border-slate-200 bg-emerald-700 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
-                  <div>
-                    <h3 className="text-base font-black uppercase tracking-wide">
-                      {grp.nomeGrupo}
-                    </h3>
-                    <p className="text-xs text-emerald-100">
-                      Dirigentes: <span className="font-semibold">{grp.superintendentes}</span>
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {grupos.map((g) => {
+              const membrosFiltrados = buscaIrmao.trim()
+                ? g.membros.filter((m) => m.toLowerCase().includes(buscaIrmao.toLowerCase()))
+                : g.membros;
+              const temIrmaoBuscado = buscaIrmao.trim() && membrosFiltrados.length > 0;
+
+              return (
+                <div
+                  key={g.id}
+                  className={`rounded-2xl border bg-white p-5 shadow-xs dark:bg-slate-900 transition-all ${
+                    temIrmaoBuscado
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-black uppercase text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        {g.nomeGrupo || g.nome}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        {g.membros.length} membros
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">Dirigente(s): </span>
+                      {g.superintendentes}
                     </p>
                   </div>
-                  <span className="mt-1 rounded-md bg-emerald-900/60 px-2.5 py-1 text-xs font-bold sm:mt-0">
-                    {grp.membros.length} Publicadores
-                  </span>
-                </div>
 
-                {/* Lista de Membros */}
-                <div className="p-4 sm:p-5">
-                  <div className="flex flex-wrap gap-2">
-                    {grp.membros.map((membro) => {
-                      const ehDestacado = irmaoSelecionado && membro.toLowerCase().includes(irmaoSelecionado.toLowerCase());
-                      return (
-                        <span
-                          key={membro}
-                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                            ehDestacado
-                              ? 'border-amber-500 bg-amber-200 font-bold text-amber-950 dark:bg-amber-800 dark:text-amber-100'
-                              : 'border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                          }`}
-                        >
-                          {membro}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  <ul className="mt-3 divide-y divide-slate-100 text-xs dark:divide-slate-800/60 max-h-96 overflow-y-auto pr-1">
+                    {membrosFiltrados.map((membro, idx) => (
+                      <li
+                        key={idx}
+                        className={`py-1.5 flex items-center gap-2 ${
+                          buscaIrmao.trim() && membro.toLowerCase().includes(buscaIrmao.toLowerCase())
+                            ? 'font-bold text-emerald-700 dark:text-emerald-400'
+                            : 'text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        <span>{membro}</span>
+                      </li>
+                    ))}
+                    {membrosFiltrados.length === 0 && (
+                      <li className="py-2 text-center text-slate-400 italic">
+                        Nenhum membro encontrado neste grupo.
+                      </li>
+                    )}
+                  </ul>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                                      */}
-      {/* ========================================================================= */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                         */}
+      {/* ------------------------------------------------------------- */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                  <Lock className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Acesso do Responsável</h3>
-                  <p className="text-xs text-slate-500">Limpeza do Salão do Reino</p>
-                </div>
+                <Lock className="h-5 w-5 text-emerald-700 dark:text-emerald-400" />
+                <h3 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                  Acesso do Responsável
+                </h3>
               </div>
-              <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLoginSubmit} className="mt-4 space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Senha Administrativa da Congregação
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Senha de Acesso:
                 </label>
-                <div className="relative">
+                <div className="relative mt-1">
                   <input
                     type={showPasswordText ? 'text' : 'password'}
                     value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onChange={(e) => {
+                      setPasswordInput(e.target.value);
+                      setAuthError('');
+                    }}
                     placeholder="Digite a senha..."
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     autoFocus
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPasswordText(!showPasswordText)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
                     {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {authError && <p className="mt-1 text-xs font-medium text-rose-600">{authError}</p>}
+                {authError && <p className="mt-1 text-xs font-bold text-red-600">{authError}</p>}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAuthModal(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+                  className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800"
                 >
                   Entrar
                 </button>
@@ -816,113 +778,119 @@ export const LimpezaView: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL DE EDIÇÃO / CRIAÇÃO DE ESCALA DE LIMPEZA                            */}
-      {/* ========================================================================= */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE CADASTRO / EDIÇÃO DE ESCALA                         */}
+      {/* ------------------------------------------------------------- */}
       {isEditorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {itemParaEditar ? 'Editar Escala de Limpeza' : 'Nova Escala de Limpeza'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                {itemParaEditar ? 'Editar Escala de Limpeza' : 'Cadastrar Escala de Limpeza'}
               </h3>
-              <button onClick={() => setIsEditorOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
+              <button
+                type="button"
+                onClick={() => setIsEditorOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveItem} className="space-y-3">
+            <form onSubmit={handleSaveItem} className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Mês</label>
-                  <select
-                    value={formData.mes}
-                    onChange={(e) => setFormData({ ...formData, mes: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Dias</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Mês:
+                  </label>
                   <input
                     type="text"
+                    required
+                    value={formData.mes}
+                    onChange={(e) => setFormData({ ...formData, mes: e.target.value })}
+                    placeholder="Ex: Setembro"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Dias:
+                  </label>
+                  <input
+                    type="text"
+                    required
                     value={formData.dias}
                     onChange={(e) => setFormData({ ...formData, dias: e.target.value })}
-                    placeholder="Ex: 4 ou 7/11"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    required
+                    placeholder="Ex: 04/08 ou 1"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Dias da Semana</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Grupo Designado:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.grupo}
+                  onChange={(e) => setFormData({ ...formData, grupo: e.target.value })}
+                  placeholder="Ex: GRUPO 1, GRUPO 2..."
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Dias da Semana / Reuniões:
+                </label>
                 <input
                   type="text"
                   value={formData.diasSemana}
                   onChange={(e) => setFormData({ ...formData, diasSemana: e.target.value })}
                   placeholder="Ex: Quarta Feira e Domingo"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  required
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Grupo</label>
-                  <select
-                    value={formData.grupo}
-                    onChange={(e) => setFormData({ ...formData, grupo: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="GRUPO 1">GRUPO 1</option>
-                    <option value="GRUPO 2">GRUPO 2</option>
-                    <option value="GRUPO 3">GRUPO 3</option>
-                    <option value="Assembléia">Assembléia</option>
-                    <option value="Congresso">Congresso</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Responsáveis</label>
-                  <input
-                    type="text"
-                    value={formData.responsaveis}
-                    onChange={(e) => setFormData({ ...formData, responsaveis: e.target.value })}
-                    placeholder="Ex: AIRTON E DHIEGO"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="chkEspecialLimpeza"
-                  checked={formData.ehEspecial}
-                  onChange={(e) => setFormData({ ...formData, ehEspecial: e.target.checked })}
-                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <label htmlFor="chkEspecialLimpeza" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Evento especial (Assembléia / Congresso)
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Responsáveis:
                 </label>
+                <input
+                  type="text"
+                  value={formData.responsaveis}
+                  onChange={(e) => setFormData({ ...formData, responsaveis: e.target.value })}
+                  placeholder="Ex: AIRTON E DHIEGO"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Observação:
+                </label>
+                <input
+                  type="text"
+                  value={formData.observacao}
+                  onChange={(e) => setFormData({ ...formData, observacao: e.target.value })}
+                  placeholder="Ex: Limpeza especial / Assembléia"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3">
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800"
+                  className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800"
                 >
                   Salvar
                 </button>
@@ -932,23 +900,52 @@ export const LimpezaView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Importação e Exportação de Planilhas em Lote */}
-      <BulkImportExportModal
-        isOpen={isBulkModalOpen}
-        onClose={() => setIsBulkModalOpen(false)}
-        modulo="limpeza"
-        tituloModulo="Limpeza do Salão do Reino"
-        dadosAtuais={escalas}
-        isAdmin={isAdmin}
-        onImportadoComSucesso={handleBulkSuccess}
-      />
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO                              */}
+      {/* ------------------------------------------------------------- */}
+      {itemParaExcluir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-base font-black uppercase text-slate-900 dark:text-white">
+              Excluir Escala
+            </h3>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              Tem certeza que deseja remover a escala de{' '}
+              <span className="font-bold text-slate-900 dark:text-white">
+                {itemParaExcluir.dias} de {itemParaExcluir.mes} ({itemParaExcluir.grupo})
+              </span>
+              ?
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setItemParaExcluir(null)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Modal de Importação de Planilha Trimestral */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE IMPORTAÇÃO DE PLANILHA TRIMESTRAL                   */}
+      {/* ------------------------------------------------------------- */}
       <ImportarPlanilhaModal
         isOpen={isImportPlanilhaOpen}
         onClose={() => setIsImportPlanilhaOpen(false)}
         modulo="limpeza"
-        onImportadoComSucesso={() => setEscalas(getStoredLimpezaEscalas())}
+        onImportadoComSucesso={() => {
+          setEscalas(getStoredLimpezaEscalas());
+        }}
       />
     </div>
   );

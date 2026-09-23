@@ -37,6 +37,33 @@ export const COLLECTIONS = {
 
 export type SyncStatus = 'connecting' | 'connected' | 'offline' | 'error';
 
+function isGenericSampleDoc(collectionName: string, docData: any): boolean {
+  if (!docData) return false;
+  const id = String(docData.id || '').toLowerCase();
+  if (collectionName === COLLECTIONS.DESIGNACOES) {
+    if (/^(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
+    if (docData.mesChave === 'abril' && (String(docData.indicador).includes('Pedro / Fernando') || String(docData.microfone).includes('Vanderlei'))) return true;
+  }
+  if (collectionName === COLLECTIONS.DISCURSOS) {
+    if (/^disc-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
+    if (String(docData.mes).toLowerCase().includes('abril') && String(docData.tema).includes('verdadeira religião')) return true;
+  }
+  if (collectionName === COLLECTIONS.LIMPEZA) {
+    if (/^limp-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
+    if (String(docData.grupo).includes('DANILO E VILSON') || String(docData.grupo).includes('SAMUEL / GEOVANE')) return true;
+  }
+  if (collectionName === COLLECTIONS.CAMPO_PROGRAMACAO) {
+    if (/^prog-campo-(1[0-1]|[1-9])$/.test(id)) return true;
+  }
+  if (collectionName === COLLECTIONS.CAMPO) {
+    if (/^c-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
+  }
+  if (collectionName === COLLECTIONS.S140T) {
+    if (id.startsWith('s140t-2026-04-')) return true;
+  }
+  return false;
+}
+
 class FirebaseSyncManager {
   private status: SyncStatus = 'connecting';
   private listeners: Array<(status: SyncStatus) => void> = [];
@@ -68,6 +95,13 @@ class FirebaseSyncManager {
   public init() {
     if (typeof window === 'undefined') return;
 
+    window.addEventListener('online', () => {
+      this.setStatus('connecting');
+    });
+    window.addEventListener('offline', () => {
+      this.setStatus('offline');
+    });
+
     try {
       this.syncS140T();
       this.syncTerritorios();
@@ -92,9 +126,14 @@ class FirebaseSyncManager {
     const unsub = onSnapshot(
       colRef,
       async (snapshot) => {
-        this.setStatus('connected');
+        if (!snapshot.metadata.fromCache) {
+          this.setStatus('connected');
+        }
 
         if (snapshot.empty) {
+          if (snapshot.metadata.fromCache) {
+            return;
+          }
           // Se a coleção estiver vazia no Firestore pela primeira vez, faz o seed inicial com o modelo oficial
           try {
             const batch = writeBatch(db);
@@ -120,9 +159,21 @@ class FirebaseSyncManager {
           semanas.push(docSnap.data() as S140TSemana);
         });
 
-        semanas.sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia));
-        localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(semanas));
-        window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: semanas }));
+        const temSemanasReais = semanas.some((s) => !s.id.startsWith('s140t-2026-04-') && !s.id.startsWith('sem-2026-'));
+        let semanasFinais = semanas;
+        if (temSemanasReais) {
+          semanasFinais = semanas.filter((s) => !s.id.startsWith('s140t-2026-04-'));
+          const docsParaPurgar = snapshot.docs.filter((d) => d.id.startsWith('s140t-2026-04-'));
+          if (docsParaPurgar.length > 0) {
+            const batch = writeBatch(db);
+            docsParaPurgar.forEach((d) => batch.delete(d.ref));
+            batch.commit().catch(() => {});
+          }
+        }
+
+        semanasFinais.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
+        localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(semanasFinais));
+        window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: semanasFinais }));
       },
       (error) => {
         console.warn('Falha no listener Firestore S140T:', error);
@@ -189,9 +240,14 @@ class FirebaseSyncManager {
     const unsub = onSnapshot(
       colRef,
       async (snapshot) => {
-        this.setStatus('connected');
+        if (!snapshot.metadata.fromCache) {
+          this.setStatus('connected');
+        }
 
         if (snapshot.empty) {
+          if (snapshot.metadata.fromCache) {
+            return;
+          }
           // Seed inicial dos territórios
           try {
             const batch = writeBatch(db);
@@ -266,9 +322,14 @@ class FirebaseSyncManager {
     const unsub = onSnapshot(
       colRef,
       async (snapshot) => {
-        this.setStatus('connected');
+        if (!snapshot.metadata.fromCache) {
+          this.setStatus('connected');
+        }
 
         if (snapshot.empty) {
+          if (snapshot.metadata.fromCache) {
+            return;
+          }
           const localRaw = localStorage.getItem(localStorageKey);
           if (localRaw) {
             try {
@@ -295,8 +356,23 @@ class FirebaseSyncManager {
           items.push({ id: d.id, ...d.data() });
         });
 
-        localStorage.setItem(localStorageKey, JSON.stringify(items));
-        window.dispatchEvent(new CustomEvent(eventName, { detail: items }));
+        // Se houver registros reais não-amostra, descarta amostras e purga do Firestore
+        const temRegistrosReais = items.some((it: any) => !isGenericSampleDoc(collectionName, it));
+        let itensFinais = items;
+        if (temRegistrosReais) {
+          itensFinais = items.filter((it: any) => !isGenericSampleDoc(collectionName, it));
+
+          // Purga do Firestore de forma assíncrona para que nunca mais reapareçam
+          const docsParaPurgar = snapshot.docs.filter((d) => isGenericSampleDoc(collectionName, { id: d.id, ...d.data() }));
+          if (docsParaPurgar.length > 0) {
+            const batch = writeBatch(db);
+            docsParaPurgar.forEach((d) => batch.delete(d.ref));
+            batch.commit().catch(() => {});
+          }
+        }
+
+        localStorage.setItem(localStorageKey, JSON.stringify(itensFinais));
+        window.dispatchEvent(new CustomEvent(eventName, { detail: itensFinais }));
       },
       (error) => {
         console.warn(`Falha no listener de ${collectionName}:`, error);

@@ -14,9 +14,12 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  ChevronLeft,
+  ChevronRight,
   FileSpreadsheet,
 } from 'lucide-react';
 import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
+import { parseItemDate } from '../utils/dateUtils';
 import {
   CampoProgramacao,
   getStoredCampoProgramacao,
@@ -55,6 +58,7 @@ const parseDataCampo = (s: string): Date | null => {
 
 export const ServicoDeCampoView: React.FC = () => {
   const [programacoes, setProgramacoes] = useState<CampoProgramacao[]>([]);
+  const [programacaoIdAtiva, setProgramacaoIdAtiva] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState<boolean>(isAdminAuthenticated());
 
   // Modais
@@ -115,8 +119,8 @@ export const ServicoDeCampoView: React.FC = () => {
   // Ordenação cronológica das programações
   const programacoesOrdenadas = useMemo(() => {
     return [...programacoes].sort((a, b) => {
-      const dtA = parseDataCampo(a.data);
-      const dtB = parseDataCampo(b.data);
+      const dtA = parseItemDate(a.data) || parseDataCampo(a.data);
+      const dtB = parseItemDate(b.data) || parseDataCampo(b.data);
       if (dtA && dtB) {
         return dtA.getTime() - dtB.getTime();
       }
@@ -126,41 +130,67 @@ export const ServicoDeCampoView: React.FC = () => {
     });
   }, [programacoes]);
 
-  // Mostrar primeiro as próximas programações
-  const { proximaProgramacao, programacoesFuturas, programacoesAnteriores } = useMemo(() => {
-    if (programacoesOrdenadas.length === 0) {
-      return {
-        proximaProgramacao: null,
-        programacoesFuturas: [],
-        programacoesAnteriores: [],
-      };
-    }
-
+  // Identificar a próxima programação futura (data >= hoje)
+  const proximoIndex = useMemo(() => {
+    if (programacoesOrdenadas.length === 0) return -1;
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    // Encontra o índice da primeira programação com data >= hoje
-    let proximoIndex = programacoesOrdenadas.findIndex((item) => {
-      const dt = parseDataCampo(item.data);
+    return programacoesOrdenadas.findIndex((item) => {
+      const dt = parseItemDate(item.data) || parseDataCampo(item.data);
       if (!dt) return false;
       return dt.getTime() >= hoje.getTime();
     });
-
-    // Se nenhuma tiver data >= hoje (por exemplo, todas já passaram), seleciona a primeira da lista
-    if (proximoIndex === -1) {
-      proximoIndex = 0;
-    }
-
-    const proxima = programacoesOrdenadas[proximoIndex];
-    const futuras = programacoesOrdenadas.filter((_, idx) => idx > proximoIndex);
-    const anteriores = programacoesOrdenadas.filter((_, idx) => idx < proximoIndex);
-
-    return {
-      proximaProgramacao: proxima,
-      programacoesFuturas: futuras,
-      programacoesAnteriores: anteriores,
-    };
   }, [programacoesOrdenadas]);
+
+  // Próxima programação futura
+  const proximaProgramacao = useMemo(() => {
+    if (programacoesOrdenadas.length === 0) return null;
+    if (proximoIndex !== -1) {
+      return programacoesOrdenadas[proximoIndex];
+    }
+    return programacoesOrdenadas[0];
+  }, [programacoesOrdenadas, proximoIndex]);
+
+  // Ao carregar ou atualizar lista, seleciona automaticamente a próxima programação futura
+  useEffect(() => {
+    if (programacoesOrdenadas.length > 0) {
+      setProgramacaoIdAtiva((prev) => {
+        if (!prev || !programacoesOrdenadas.some((p) => p.id === prev)) {
+          return proximoIndex !== -1
+            ? programacoesOrdenadas[proximoIndex].id
+            : programacoesOrdenadas[programacoesOrdenadas.length - 1].id;
+        }
+        return prev;
+      });
+    }
+  }, [programacoesOrdenadas, proximoIndex]);
+
+  // Programação selecionada para exibição no quadro
+  const programacaoAtiva = useMemo(() => {
+    if (programacoesOrdenadas.length === 0) return null;
+    const encontrada = programacoesOrdenadas.find((p) => p.id === programacaoIdAtiva);
+    if (encontrada) return encontrada;
+    return proximoIndex !== -1 ? programacoesOrdenadas[proximoIndex] : programacoesOrdenadas[0];
+  }, [programacoesOrdenadas, programacaoIdAtiva, proximoIndex]);
+
+  // Índice para navegação anterior / próximo
+  const indiceProgramacaoAtual = useMemo(() => {
+    if (!programacaoAtiva) return -1;
+    return programacoesOrdenadas.findIndex((p) => p.id === programacaoAtiva.id);
+  }, [programacoesOrdenadas, programacaoAtiva]);
+
+  const handleProximaProgramacao = () => {
+    if (indiceProgramacaoAtual < programacoesOrdenadas.length - 1) {
+      setProgramacaoIdAtiva(programacoesOrdenadas[indiceProgramacaoAtual + 1].id);
+    }
+  };
+
+  const handleProgramacaoAnterior = () => {
+    if (indiceProgramacaoAtual > 0) {
+      setProgramacaoIdAtiva(programacoesOrdenadas[indiceProgramacaoAtual - 1].id);
+    }
+  };
 
   // Handlers de Autenticação do Responsável
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -208,7 +238,7 @@ export const ServicoDeCampoView: React.FC = () => {
     setIsEditorOpen(true);
   };
 
-  const handleSaveItem = (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.data.trim()) {
       setFeedbackMsg({ tipo: 'erro', texto: 'Informe a data da programação.' });
@@ -223,7 +253,7 @@ export const ServicoDeCampoView: React.FC = () => {
       responsavel: formData.responsavel.trim(),
     };
 
-    const res = saveStoredCampoProgramacao(item);
+    const res = await saveStoredCampoProgramacao(item);
     if (res.success && res.data) {
       setProgramacoes(res.data);
       setIsEditorOpen(false);
@@ -242,9 +272,9 @@ export const ServicoDeCampoView: React.FC = () => {
     }
   };
 
-  const handleConfirmExcluir = () => {
+  const handleConfirmExcluir = async () => {
     if (!itemParaExcluir) return;
-    const res = deleteStoredCampoProgramacao(itemParaExcluir.id);
+    const res = await deleteStoredCampoProgramacao(itemParaExcluir.id);
     if (res.success && res.data) {
       setProgramacoes(res.data);
       setItemParaExcluir(null);
@@ -355,9 +385,159 @@ export const ServicoDeCampoView: React.FC = () => {
       </header>
 
       {/* ------------------------------------------------------------- */}
-      {/* CORPO PRINCIPAL - VISUALIZAÇÃO PÚBLICA                        */}
+      {/* SELETOR SIMPLES DA DATA DE CAMPO (PADRÃO VIDA E MINISTÉRIO)   */}
       {/* ------------------------------------------------------------- */}
-      {programacoes.length === 0 ? (
+      {programacoesOrdenadas.length > 0 && programacaoAtiva ? (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleProgramacaoAnterior}
+                disabled={indiceProgramacaoAtual <= 0}
+                className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                aria-label="Saída anterior"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleProximaProgramacao}
+                disabled={indiceProgramacaoAtual >= programacoesOrdenadas.length - 1}
+                className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                aria-label="Próxima saída"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+              <div className="ml-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Saída selecionada:
+                </span>
+                <div className="text-base font-black text-slate-900 dark:text-white">
+                  {programacaoAtiva.data}
+                </div>
+              </div>
+            </div>
+
+            {/* Dropdown direto para escolher a data */}
+            <div className="flex items-center gap-2">
+              <select
+                value={programacaoAtiva.id}
+                onChange={(e) => setProgramacaoIdAtiva(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-sky-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 max-w-xs"
+              >
+                {programacoesOrdenadas.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.data} - {item.horario} ({item.pontoEncontro})
+                  </option>
+                ))}
+              </select>
+
+              {/* Ações administrativas para a saída selecionada */}
+              {isAdmin && (
+                <div className="flex items-center gap-1.5 ml-1">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditar(programacaoAtiva)}
+                    className="rounded-lg border border-slate-300 bg-white p-2 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 transition-colors"
+                    title="Editar programação"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setItemParaExcluir(programacaoAtiva)}
+                    className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 transition-colors"
+                    title="Excluir programação"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ------------------------------------------------------------- */}
+          {/* QUADRO DA PROGRAMAÇÃO SELECIONADA                             */}
+          {/* ------------------------------------------------------------- */}
+          <section
+            id="card-programacao-campo-selecionada"
+            className="rounded-2xl border-2 border-sky-600 bg-white p-6 shadow-sm dark:border-sky-500 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-sky-200 pb-3 dark:border-sky-900/60">
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-sky-700 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white dark:bg-sky-600">
+                  {proximoIndex !== -1 && programacaoAtiva.id === programacoesOrdenadas[proximoIndex]?.id
+                    ? 'Próxima Saída'
+                    : 'Serviço de Campo'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
+              {/* Data */}
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Data:
+                  </span>
+                  <span className="text-lg font-black text-slate-900 dark:text-white">
+                    {programacaoAtiva.data}
+                  </span>
+                </div>
+              </div>
+
+              {/* Horário */}
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Horário:
+                  </span>
+                  <span className="text-lg font-black text-slate-900 dark:text-white">
+                    {programacaoAtiva.horario}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ponto de encontro */}
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Ponto de encontro:
+                  </span>
+                  <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                    {programacaoAtiva.pontoEncontro}
+                  </span>
+                </div>
+              </div>
+
+              {/* Responsável */}
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                  <User className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Responsável:
+                  </span>
+                  <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                    {programacaoAtiva.responsavel || '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-800">
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
             Nenhuma programação cadastrada no momento.
@@ -371,267 +551,6 @@ export const ServicoDeCampoView: React.FC = () => {
               <Plus className="h-4 w-4" />
               <span>Cadastrar Primeira Programação</span>
             </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {/* 1. PRÓXIMA PROGRAMAÇÃO EM DESTAQUE */}
-          {proximaProgramacao && (
-            <section
-              id="card-proxima-programacao-campo"
-              className="rounded-2xl border-2 border-sky-600 bg-sky-50/40 p-6 shadow-sm dark:border-sky-500 dark:bg-sky-950/20"
-            >
-              <div className="flex items-center justify-between border-b border-sky-200/80 pb-3 dark:border-sky-900/60">
-                <div className="flex items-center gap-2">
-                  <span className="rounded-md bg-sky-700 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white dark:bg-sky-600">
-                    Próxima Saída
-                  </span>
-                </div>
-
-                {isAdmin && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditar(proximaProgramacao)}
-                      className="rounded-lg border border-slate-300 bg-white p-2 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 transition-colors"
-                      title="Editar programação"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setItemParaExcluir(proximaProgramacao)}
-                      className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 transition-colors"
-                      title="Excluir programação"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
-                {/* Data */}
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
-                    <Calendar className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Data:
-                    </span>
-                    <span className="text-lg font-black text-slate-900 dark:text-white">
-                      {proximaProgramacao.data}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Horário */}
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
-                    <Clock className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Horário:
-                    </span>
-                    <span className="text-lg font-black text-slate-900 dark:text-white">
-                      {proximaProgramacao.horario}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Ponto de encontro */}
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
-                    <MapPin className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Ponto de encontro:
-                    </span>
-                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
-                      {proximaProgramacao.pontoEncontro}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Responsável */}
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
-                    <User className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Responsável:
-                    </span>
-                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
-                      {proximaProgramacao.responsavel || '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* 2. PROGRAMAÇÕES FUTURAS */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2 dark:border-slate-800">
-              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                Programações Futuras
-              </h2>
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                {programacoesFuturas.length}{' '}
-                {programacoesFuturas.length === 1
-                  ? 'saída programada'
-                  : 'saídas programadas'}
-              </span>
-            </div>
-
-            {programacoesFuturas.length > 0 ? (
-              <div className="space-y-3">
-                {programacoesFuturas.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-slate-300 bg-white p-5 shadow-2xs hover:border-slate-400 dark:border-slate-800 dark:bg-slate-900 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 w-full">
-                        {/* Data */}
-                        <div>
-                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            Data:
-                          </span>
-                          <span className="text-base font-black text-slate-900 dark:text-white">
-                            {item.data}
-                          </span>
-                        </div>
-
-                        {/* Horário */}
-                        <div>
-                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            Horário:
-                          </span>
-                          <span className="text-base font-black text-slate-900 dark:text-white">
-                            {item.horario}
-                          </span>
-                        </div>
-
-                        {/* Ponto de encontro */}
-                        <div>
-                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            Ponto de encontro:
-                          </span>
-                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-                            {item.pontoEncontro}
-                          </span>
-                        </div>
-
-                        {/* Responsável */}
-                        <div>
-                          <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            Responsável:
-                          </span>
-                          <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-                            {item.responsavel || '—'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {isAdmin && (
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditar(item)}
-                            className="rounded-lg border border-slate-300 bg-white p-2 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 transition-colors"
-                            title="Editar programação"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setItemParaExcluir(item)}
-                            className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 transition-colors"
-                            title="Excluir programação"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="py-4 text-center text-sm font-medium text-slate-500 dark:text-slate-400">
-                Não há outras programações futuras no momento.
-              </p>
-            )}
-          </section>
-
-          {/* 3. PROGRAMAÇÕES ANTERIORES (CONSULTA) */}
-          {programacoesAnteriores.length > 0 && (
-            <section className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex items-center justify-between pb-2">
-                <h2 className="text-base font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                  Programações Anteriores
-                </h2>
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-500">
-                  {programacoesAnteriores.length} registro(s)
-                </span>
-              </div>
-
-              <div className="space-y-2 opacity-80 hover:opacity-100 transition-opacity">
-                {programacoesAnteriores.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-900/60"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 w-full text-xs">
-                        <div>
-                          <span className="font-bold text-slate-500 dark:text-slate-400">Data: </span>
-                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.data}</span>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-500 dark:text-slate-400">Horário: </span>
-                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.horario}</span>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-500 dark:text-slate-400">Ponto de encontro: </span>
-                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.pontoEncontro}</span>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-500 dark:text-slate-400">Responsável: </span>
-                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{item.responsavel || '—'}</span>
-                        </div>
-                      </div>
-
-                      {isAdmin && (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditar(item)}
-                            className="rounded-lg border border-slate-300 bg-white p-1.5 text-sky-800 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300"
-                            title="Editar programação"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setItemParaExcluir(item)}
-                            className="rounded-lg border border-slate-300 bg-white p-1.5 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
-                            title="Excluir programação"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
           )}
         </div>
       )}
@@ -871,7 +790,9 @@ export const ServicoDeCampoView: React.FC = () => {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         modulo="campo"
-        onImportadoComSucesso={() => setProgramacoes(getStoredCampoProgramacao())}
+        onImportadoComSucesso={(_total, _meses) => {
+          setProgramacoes(getStoredCampoProgramacao());
+        }}
       />
     </div>
   );

@@ -18,6 +18,8 @@ export interface GrupoLimpezaMembros {
   nomeGrupo: string; // Ex: 'GRUPO 1 / Salão do reino'
   superintendentes: string; // Ex: 'Samuel / Geovane / Hugo'
   membros: string[]; // Lista de nomes
+  nome?: string; // alias opcional para compatibilidade
+  responsavel?: string; // alias opcional para compatibilidade
 }
 
 export interface LimpezaDesignacao {
@@ -244,6 +246,14 @@ export const CANONICAL_LIMPEZA_SAMPLE_IDS = new Set(
   LIMPEZA_ESCALAS_CANONICAS.map((i) => i.id)
 );
 
+export function isCanonicalSampleLimpeza(item: LimpezaEscalaItem): boolean {
+  if (!item) return false;
+  if (CANONICAL_LIMPEZA_SAMPLE_IDS.has(item.id)) return true;
+  if (/^limp-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(item.id)) return true;
+  if (item.mesChave === 'abril' && (item.responsaveis?.includes('AIRTON') || item.responsaveis?.includes('SAMUEL'))) return true;
+  return false;
+}
+
 export function getStoredLimpezaEscalas(): LimpezaEscalaItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_LIMPEZA_ESCALAS);
@@ -253,9 +263,9 @@ export function getStoredLimpezaEscalas(): LimpezaEscalaItem[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const temRegistrosReais = parsed.some((i) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(i.id));
+      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleLimpeza(i));
       if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(i.id));
+        const limpos = parsed.filter((i) => !isCanonicalSampleLimpeza(i));
         if (limpos.length > 0) {
           return limpos;
         }
@@ -311,7 +321,7 @@ export async function saveBulkLimpezaEscala(
   try {
     const current = getStoredLimpezaEscalas();
     // Ao importar dados reais, descarta dados de exemplo antigos do template
-    const cleanedCurrent = current.filter((item) => !CANONICAL_LIMPEZA_SAMPLE_IDS.has(item.id));
+    const cleanedCurrent = current.filter((item) => !isCanonicalSampleLimpeza(item));
     let updated: LimpezaEscalaItem[];
 
     if (mode === 'replace_all') {
