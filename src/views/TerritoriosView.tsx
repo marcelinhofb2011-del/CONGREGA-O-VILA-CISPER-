@@ -26,6 +26,7 @@ import {
   setAdminAuthenticated,
   updateAdminPassword,
 } from '../data/territoriosStorage';
+import { firebaseSync } from '../data/firebaseSyncService';
 import {
   isPushNotificationSupported,
   isDevicePushEnabled,
@@ -84,44 +85,28 @@ export const TerritoriosView: React.FC = () => {
     setIsAdmin(isAdminAuthenticated());
     recarregarDados();
 
-    const handleTerritoriosUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent<Territorio[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setTerritorios(customEvent.detail);
-      }
-    };
+    // Inscrição direta nos listeners de tempo real do Firebase (fonte única da verdade)
+    const unsubTer = firebaseSync.onTerritoriosChange((lista) => {
+      setTerritorios(lista);
+    });
 
-    const handleSolicitacoesUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent<SolicitacaoTerritorio[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setSolicitacoes(customEvent.detail);
-      }
-    };
+    const unsubSol = firebaseSync.onSolicitacoesChange((lista) => {
+      setSolicitacoes(lista);
+    });
 
-    const handleTransferenciasUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent<TransferenciaTerritorio[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setTransferencias(customEvent.detail);
-      }
-    };
+    const unsubTr = firebaseSync.onTransferenciasChange((lista) => {
+      setTransferencias(lista);
+    });
 
-    const handleHistoricoUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent<HistoricoTerritorio[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setHistorico(customEvent.detail);
-      }
-    };
-
-    window.addEventListener('territorios-firebase-updated', handleTerritoriosUpdate);
-    window.addEventListener('solicitacoes-firebase-updated', handleSolicitacoesUpdate);
-    window.addEventListener('transferencias-firebase-updated', handleTransferenciasUpdate);
-    window.addEventListener('historico-firebase-updated', handleHistoricoUpdate);
+    const unsubHist = firebaseSync.onHistoricoChange((lista) => {
+      setHistorico(lista);
+    });
 
     return () => {
-      window.removeEventListener('territorios-firebase-updated', handleTerritoriosUpdate);
-      window.removeEventListener('solicitacoes-firebase-updated', handleSolicitacoesUpdate);
-      window.removeEventListener('transferencias-firebase-updated', handleTransferenciasUpdate);
-      window.removeEventListener('historico-firebase-updated', handleHistoricoUpdate);
+      unsubTer();
+      unsubSol();
+      unsubTr();
+      unsubHist();
     };
   }, []);
 

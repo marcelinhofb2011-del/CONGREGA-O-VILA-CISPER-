@@ -2,7 +2,7 @@ import { firebaseSync } from './firebaseSyncService';
 
 // Armazenamento e gerenciamento permanente de Territórios, Solicitações, Transferências e Histórico
 
-export type StatusTerritorio = 'Disponível' | 'Designado' | 'Concluído' | 'Estornado';
+export type StatusTerritorio = 'Disponível' | 'Solicitado' | 'Designado' | 'Concluído' | 'Estornado';
 export type StatusSolicitacao = 'Pendente' | 'Designado' | 'Cancelada';
 export type StatusTransferencia = 'Aguardando aprovação' | 'Aprovada' | 'Recusada';
 
@@ -18,6 +18,10 @@ export interface Territorio {
   data_ultima_designacao?: string; // DD/MM/AAAA
   hora_ultima_designacao?: string; // HH:mm
   responsavel_designacao?: string; // Nome do responsável que designou
+  solicitado_por?: string; // Nome do publicador quando solicitado
+  solicitacao_id?: string; // ID da solicitação pendente
+  data_solicitacao?: string; // DD/MM/AAAA
+  hora_solicitacao?: string; // HH:mm
   data_conclusao?: string; // DD/MM/AAAA HH:mm
   data_estorno?: string; // DD/MM/AAAA HH:mm
   motivo_estorno?: string;
@@ -68,6 +72,37 @@ export interface HistoricoTerritorio {
   created_at: string;
 }
 
+// Helpers para normalização e validação de status
+export function isStatusDisponivel(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'disponível' || s === 'disponivel' || s === 'available';
+}
+
+export function isStatusSolicitado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'solicitado' || s === 'requested';
+}
+
+export function isStatusDesignado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'designado' || s === 'assigned';
+}
+
+export function isStatusConcluido(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'concluído' || s === 'concluido' || s === 'completed';
+}
+
+export function isStatusEstornado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'estornado' || s === 'returned';
+}
+
 // Chaves de armazenamento local
 export const STORAGE_KEY_TERRITORIOS = 'vila_cisper_territorios_lista';
 export const STORAGE_KEY_SOLICITACOES = 'vila_cisper_territorios_solicitacoes';
@@ -81,17 +116,17 @@ export const STORAGE_KEY_ADMIN_PERSISTED = 'vila_cisper_admin_auth_persisted';
 // Senha padrão inicial caso o responsável ainda não tenha alterado
 const SENHA_PADRAO_INICIAL = 'cisper2026';
 
-function formatarDataHoje(): string {
+export function formatarDataHoje(): string {
   const now = new Date();
   return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 }
 
-function formatarHoraHoje(): string {
+export function formatarHoraHoje(): string {
   const now = new Date();
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
-function formatarDataHoraHoje(): string {
+export function formatarDataHoraHoje(): string {
   return `${formatarDataHoje()} às ${formatarHoraHoje()}`;
 }
 
@@ -195,37 +230,40 @@ export function persistAndSyncTerritorios(territorios: Territorio[]): void {
   firebaseSync.saveAllTerritorios(territorios);
 }
 
-export function saveStoredTerritorio(item: Territorio): Territorio[] {
+export async function saveStoredTerritorio(item: Territorio): Promise<Territorio[]> {
   const current = getStoredTerritorios();
   const index = current.findIndex((t) => t.id === item.id);
   const now = new Date().toISOString();
 
-  let updated: Territorio[];
+  let updatedItem: Territorio;
+  let updatedList: Territorio[];
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = {
+    updatedItem = {
       ...item,
       updated_at: now,
     };
+    updatedList = [...current];
+    updatedList[index] = updatedItem;
   } else {
-    updated = [
-      ...current,
-      {
-        ...item,
-        created_at: item.created_at || now,
-        updated_at: now,
-      },
-    ];
+    updatedItem = {
+      ...item,
+      created_at: item.created_at || now,
+      updated_at: now,
+    };
+    updatedList = [...current, updatedItem];
   }
 
-  persistAndSyncTerritorios(updated);
-  return updated;
+  localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updatedList));
+  await firebaseSync.saveTerritorio(updatedItem);
+  return updatedList;
 }
 
-export function deleteStoredTerritorio(id: string): Territorio[] {
+export async function deleteStoredTerritorio(id: string): Promise<Territorio[]> {
   const current = getStoredTerritorios();
   const updated = current.filter((t) => t.id !== id);
-  persistAndSyncTerritorios(updated);
+  localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
+  await firebaseSync.deleteTerritorio(id);
   return updated;
 }
 
@@ -244,156 +282,43 @@ export function getStoredSolicitacoes(): SolicitacaoTerritorio[] {
   }
 }
 
-export function createSolicitacao(nomePublicador: string): SolicitacaoTerritorio[] {
-  const current = getStoredSolicitacoes();
-  const now = new Date();
-  const dataHoje = formatarDataHoje();
-  const horaHoje = formatarHoraHoje();
+export async function createSolicitacao(
+  nomePublicador: string,
+  territorioId?: string
+): Promise<SolicitacaoTerritorio | null> {
+  const nomeLimpo = nomePublicador.trim();
+  setActivePublicador(nomeLimpo);
 
-  const nova: SolicitacaoTerritorio = {
-    id: String(Date.now()),
-    nome_publicador: nomePublicador.trim(),
-    data_solicitacao: dataHoje,
-    hora_solicitacao: horaHoje,
-    status: 'Pendente',
-    created_at: now.toISOString(),
-  };
-
-  const updated = [nova, ...current];
-  localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(updated));
-  firebaseSync.saveSolicitacao(nova, true);
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now() + 1),
-    territorio_numero: 0,
-    publicador: nomePublicador.trim(),
-    acao: 'Solicitação',
-    status: 'Pendente',
-    responsavel: 'Publicador',
-    data: `${dataHoje} às ${horaHoje}`,
-    observacao: 'Solicitação de território enviada ao responsável.',
-    created_at: now.toISOString(),
-  };
-  saveStoredHistorico(historicoItem);
-
-  // Lembrar publicador ativo neste dispositivo
-  setActivePublicador(nomePublicador.trim());
-
-  return updated;
+  // Executa transação atômica no Firebase:
+  // 1. Cria a solicitação pendente no Firestore
+  // 2. Se um território foi selecionado, muda o status dele para "Solicitado" imediatamente
+  // 3. Registra no histórico do Firestore
+  const nova = await firebaseSync.executeSolicitacaoBatch(nomeLimpo, territorioId);
+  return nova;
 }
 
 // Designar território para uma solicitação (AÇÃO EXCLUSIVA DO RESPONSÁVEL)
-export function designarTerritorioParaSolicitacao(
+export async function designarTerritorioParaSolicitacao(
   solicitacaoId: string,
   territorioId: string,
   responsavelNome: string
-): { solicitacoes: SolicitacaoTerritorio[]; territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const solicitacoes = getStoredSolicitacoes();
-  const territorios = getStoredTerritorios();
-  const now = new Date();
-  const dataHojeBR = formatarDataHoje();
-  const horaHojeBR = formatarHoraHoje();
-
-  const solIndex = solicitacoes.findIndex((s) => s.id === solicitacaoId);
-  const terIndex = territorios.findIndex((t) => t.id === territorioId);
-
-  if (solIndex === -1 || terIndex === -1) {
-    return { solicitacoes, territorios, historico: getStoredHistorico() };
-  }
-
-  const sol = solicitacoes[solIndex];
-  const ter = territorios[terIndex];
-
-  // Somente territórios marcados como Disponível podem ser escolhidos!
-  if (ter.status !== 'Disponível') {
-    return { solicitacoes, territorios, historico: getStoredHistorico() };
-  }
-
-  // 1. Atualizar a solicitação
-  solicitacoes[solIndex] = {
-    ...sol,
-    status: 'Designado',
-    territorio_id: ter.id,
-    territorio_numero: ter.numero,
-    data_designacao: dataHojeBR,
-    responsavel: responsavelNome.trim(),
-  };
-  localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(solicitacoes));
-  firebaseSync.saveSolicitacao(solicitacoes[solIndex], false);
-
-  // 2. Atualizar o território para "Designado"
-  territorios[terIndex] = {
-    ...ter,
-    status: 'Designado',
-    designado_para: sol.nome_publicador,
-    data_ultima_designacao: dataHojeBR,
-    hora_ultima_designacao: horaHojeBR,
-    responsavel_designacao: responsavelNome.trim(),
-    data_conclusao: undefined,
-    data_estorno: undefined,
-    motivo_estorno: undefined,
-    data_ultimo_retorno_sort: undefined,
-    updated_at: now.toISOString(),
-  };
-  persistAndSyncTerritorios(territorios);
-
-  // 3. Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: ter.id,
-    territorio_numero: ter.numero,
-    territorio_localidade: ter.localidade,
-    publicador: sol.nome_publicador,
-    acao: 'Designação',
-    status: 'Designado',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data: `${dataHojeBR} às ${horaHojeBR}`,
-    observacao: `Designado para ${sol.nome_publicador}`,
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { solicitacoes, territorios, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeDesignacaoBatch(
+    solicitacaoId,
+    territorioId,
+    responsavelNome
+  );
 }
 
-// Cancelar solicitação sem designar nenhum território (AÇÃO DO RESPONSÁVEL)
-export function cancelarSolicitacaoTerritorio(
+// Cancelar solicitação sem designar território (AÇÃO DO RESPONSÁVEL)
+export async function cancelarSolicitacaoTerritorio(
   solicitacaoId: string,
   responsavelNome?: string
-): { solicitacoes: SolicitacaoTerritorio[]; historico: HistoricoTerritorio[] } {
-  const solicitacoes = getStoredSolicitacoes();
-  const solIndex = solicitacoes.findIndex((s) => s.id === solicitacaoId);
-
-  if (solIndex === -1) {
-    return { solicitacoes, historico: getStoredHistorico() };
-  }
-
-  const sol = solicitacoes[solIndex];
-  const now = new Date();
-  const dataHojeBR = formatarDataHoje();
-  const horaHojeBR = formatarHoraHoje();
-
-  // 1. Remover a solicitação da lista de solicitações pendentes
-  const updatedSolicitacoes = solicitacoes.filter((s) => s.id !== solicitacaoId);
-  localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(updatedSolicitacoes));
-  firebaseSync.deleteSolicitacao(solicitacaoId);
-
-  // 2. Registrar a solicitação como Cancelada no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_numero: 0,
-    publicador: sol.nome_publicador,
-    acao: 'Solicitação Cancelada',
-    status: 'Cancelada',
-    responsavel: (responsavelNome && responsavelNome.trim()) || 'Irmão Responsável',
-    data: `${dataHojeBR} às ${horaHojeBR}`,
-    observacao: 'Solicitação cancelada pelo responsável sem designação de território.',
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { solicitacoes: updatedSolicitacoes, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeCancelamentoSolicitacaoBatch(
+    solicitacaoId,
+    responsavelNome
+  );
 }
 
 // -------------------------------------------------------------
@@ -401,145 +326,40 @@ export function cancelarSolicitacaoTerritorio(
 // -------------------------------------------------------------
 
 // CONCLUIR: Trabalho de pregação finalizado pelo publicador
-// IMPORTANTE: Concluído NÃO significa Disponível! Aguarda decisão do responsável.
-export function concluirTerritorioPublicador(
+export async function concluirTerritorioPublicador(
   territorioId: string,
   publicadorNome: string
-): { territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const territorios = getStoredTerritorios();
-  const index = territorios.findIndex((t) => t.id === territorioId);
-
-  if (index === -1) {
-    return { territorios, historico: getStoredHistorico() };
-  }
-
-  const ter = territorios[index];
-  const now = new Date();
-  const dataHora = formatarDataHoraHoje();
-
-  territorios[index] = {
-    ...ter,
-    status: 'Concluído',
-    data_conclusao: dataHora,
-    data_ultimo_retorno_sort: now.toISOString(),
-    updated_at: now.toISOString(),
-  };
-  persistAndSyncTerritorios(territorios);
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: ter.id,
-    territorio_numero: ter.numero,
-    territorio_localidade: ter.localidade,
-    publicador: publicadorNome.trim() || ter.designado_para || 'Publicador',
-    acao: 'Conclusão',
-    status: 'Concluído',
-    responsavel: 'Publicador',
-    data: dataHora,
-    observacao: 'Trabalho de pregação concluído pelo publicador. Aguarda decisão do responsável.',
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { territorios, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeConclusaoBatch(territorioId, publicadorNome);
 }
 
 // ESTORNAR: Publicador não pôde continuar e devolve o território
-// IMPORTANTE: Estornado NÃO significa Disponível! Aguarda decisão do responsável.
-export function estornarTerritorioPublicador(
+// REGRA: Transação atômica no Firebase:
+// 1. Encerra a designação atual
+// 2. Remove o vínculo ativo com o publicador (designado_para = null)
+// 3. Altera o estado do território imediatamente para "Disponível"
+// 4. Registra no histórico que houve um estorno
+// 5. Atualiza imediatamente todas as telas em tempo real
+export async function estornarTerritorioPublicador(
   territorioId: string,
   publicadorNome: string,
   motivo?: string
-): { territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const territorios = getStoredTerritorios();
-  const index = territorios.findIndex((t) => t.id === territorioId);
-
-  if (index === -1) {
-    return { territorios, historico: getStoredHistorico() };
-  }
-
-  const ter = territorios[index];
-  const now = new Date();
-  const dataHora = formatarDataHoraHoje();
-
-  territorios[index] = {
-    ...ter,
-    status: 'Estornado',
-    data_estorno: dataHora,
-    motivo_estorno: motivo?.trim() || undefined,
-    data_ultimo_retorno_sort: now.toISOString(),
-    updated_at: now.toISOString(),
-  };
-  persistAndSyncTerritorios(territorios);
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: ter.id,
-    territorio_numero: ter.numero,
-    territorio_localidade: ter.localidade,
-    publicador: publicadorNome.trim() || ter.designado_para || 'Publicador',
-    acao: 'Estorno',
-    status: 'Estornado',
-    responsavel: 'Publicador',
-    data: dataHora,
-    observacao: motivo?.trim() ? `Motivo informado: ${motivo.trim()}` : 'Devolvido ao responsável sem motivo especificado.',
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { territorios, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeEstornoBatch(territorioId, publicadorNome, motivo);
 }
 
 // COMPARTILHAR: Gera solicitação de transferência para o responsável
 // IMPORTANTE: O território continua vinculado ao publicador atual e NÃO fica disponível!
-export function solicitarCompartilhamento(
+export async function solicitarCompartilhamento(
   territorioId: string,
   publicadorAtual: string,
   novoPublicador: string
-): { transferencias: TransferenciaTerritorio[]; historico: HistoricoTerritorio[] } {
-  const currentTransf = getStoredTransferencias();
-  const territorios = getStoredTerritorios();
-  const ter = territorios.find((t) => t.id === territorioId);
-  const now = new Date();
-  const dataHoje = formatarDataHoje();
-  const horaHoje = formatarHoraHoje();
-
-  const nova: TransferenciaTerritorio = {
-    id: String(Date.now()),
-    territorio_id: territorioId,
-    territorio_numero: ter ? ter.numero : 0,
-    territorio_localidade: ter?.localidade,
-    publicador_atual: publicadorAtual.trim(),
-    novo_publicador: novoPublicador.trim(),
-    data_solicitacao: dataHoje,
-    hora_solicitacao: horaHoje,
-    status: 'Aguardando aprovação',
-    created_at: now.toISOString(),
-  };
-
-  const updatedTransf = [nova, ...currentTransf];
-  localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(updatedTransf));
-  firebaseSync.saveTransferencia(nova);
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now() + 1),
-    territorio_id: territorioId,
-    territorio_numero: ter ? ter.numero : 0,
-    territorio_localidade: ter?.localidade,
-    publicador: publicadorAtual.trim(),
-    acao: 'Compartilhamento Solicitado',
-    status: 'Aguardando aprovação',
-    responsavel: 'Publicador',
-    data: `${dataHoje} às ${horaHoje}`,
-    observacao: `Solicitada transferência para o irmão ${novoPublicador.trim()}`,
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { transferencias: updatedTransf, historico: updatedHistorico };
+): Promise<TransferenciaTerritorio | null> {
+  return await firebaseSync.executeSolicitarTransferenciaBatch(
+    territorioId,
+    publicadorAtual,
+    novoPublicador
+  );
 }
 
 // -------------------------------------------------------------
@@ -557,163 +377,35 @@ export function getStoredTransferencias(): TransferenciaTerritorio[] {
   }
 }
 
-export function aprovarTransferencia(
+export async function aprovarTransferencia(
   transferenciaId: string,
   responsavelNome: string
-): { transferencias: TransferenciaTerritorio[]; territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const transferencias = getStoredTransferencias();
-  const territorios = getStoredTerritorios();
-  const tIndex = transferencias.findIndex((t) => t.id === transferenciaId);
-
-  if (tIndex === -1) {
-    return { transferencias, territorios, historico: getStoredHistorico() };
-  }
-
-  const transf = transferencias[tIndex];
-  const now = new Date();
-  const dataHora = formatarDataHoraHoje();
-
-  // 1. Atualizar transferência
-  transferencias[tIndex] = {
-    ...transf,
-    status: 'Aprovada',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data_decisao: dataHora,
-  };
-  localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(transferencias));
-  firebaseSync.saveTransferencia(transferencias[tIndex]);
-
-  // 2. Atualizar território (mantém como DESIGNADO, NÃO passa por Disponível!)
-  const terIndex = territorios.findIndex((t) => t.id === transf.territorio_id);
-  if (terIndex >= 0) {
-    territorios[terIndex] = {
-      ...territorios[terIndex],
-      status: 'Designado',
-      designado_para: transf.novo_publicador,
-      data_ultima_designacao: formatarDataHoje(),
-      hora_ultima_designacao: formatarHoraHoje(),
-      responsavel_designacao: responsavelNome.trim(),
-      updated_at: now.toISOString(),
-    };
-    persistAndSyncTerritorios(territorios);
-  }
-
-  // 3. Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: transf.territorio_id,
-    territorio_numero: transf.territorio_numero,
-    territorio_localidade: transf.territorio_localidade,
-    publicador: transf.novo_publicador,
-    acao: 'Transferência Aprovada',
-    status: 'Designado',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data: dataHora,
-    observacao: `Transferido de ${transf.publicador_atual} para ${transf.novo_publicador}`,
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { transferencias, territorios, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeTransferenciaAprovadaBatch(transferenciaId, responsavelNome);
 }
 
-export function recusarTransferencia(
+export async function recusarTransferencia(
   transferenciaId: string,
   responsavelNome: string
-): { transferencias: TransferenciaTerritorio[]; territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const transferencias = getStoredTransferencias();
-  const territorios = getStoredTerritorios();
-  const tIndex = transferencias.findIndex((t) => t.id === transferenciaId);
-
-  if (tIndex === -1) {
-    return { transferencias, territorios, historico: getStoredHistorico() };
-  }
-
-  const transf = transferencias[tIndex];
-  const dataHora = formatarDataHoraHoje();
-
-  // Atualizar transferência como recusada
-  transferencias[tIndex] = {
-    ...transf,
-    status: 'Recusada',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data_decisao: dataHora,
-  };
-  localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(transferencias));
-  firebaseSync.saveTransferencia(transferencias[tIndex]);
-
-  // O território permanece com o publicador atual, sem alteração
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: transf.territorio_id,
-    territorio_numero: transf.territorio_numero,
-    territorio_localidade: transf.territorio_localidade,
-    publicador: transf.publicador_atual,
-    acao: 'Transferência Recusada',
-    status: 'Recusada',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data: dataHora,
-    observacao: `Pedido de transferência para ${transf.novo_publicador} foi recusado pelo responsável.`,
-    created_at: new Date().toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { transferencias, territorios, historico: updatedHistorico };
+): Promise<boolean> {
+  return await firebaseSync.executeTransferenciaRecusadaBatch(transferenciaId, responsavelNome);
 }
 
 // -------------------------------------------------------------
 // Ação Manual do Responsável: TORNAR DISPONÍVEL (Novo Ciclo)
 // -------------------------------------------------------------
-export function tornarTerritorioDisponivel(
+export async function tornarTerritorioDisponivel(
   territorioId: string,
   responsavelNome: string
-): { territorios: Territorio[]; historico: HistoricoTerritorio[] } {
-  const territorios = getStoredTerritorios();
-  const index = territorios.findIndex((t) => t.id === territorioId);
+): Promise<boolean> {
+  return await firebaseSync.executeTornarDisponivelBatch(territorioId, responsavelNome);
+}
 
-  if (index === -1) {
-    return { territorios, historico: getStoredHistorico() };
-  }
-
-  const ter = territorios[index];
-  const now = new Date();
-  const dataHora = formatarDataHoraHoje();
-  const anteriorPublicador = ter.designado_para;
-
-  territorios[index] = {
-    ...ter,
-    status: 'Disponível',
-    designado_para: undefined,
-    data_ultima_designacao: undefined,
-    hora_ultima_designacao: undefined,
-    responsavel_designacao: undefined,
-    data_conclusao: undefined,
-    data_estorno: undefined,
-    motivo_estorno: undefined,
-    data_ultimo_retorno_sort: undefined,
-    updated_at: now.toISOString(),
-  };
-  persistAndSyncTerritorios(territorios);
-
-  // Registrar no histórico permanente
-  const historicoItem: HistoricoTerritorio = {
-    id: String(Date.now()),
-    territorio_id: ter.id,
-    territorio_numero: ter.numero,
-    territorio_localidade: ter.localidade,
-    publicador: anteriorPublicador || '-',
-    acao: 'Disponibilizado para Novo Ciclo',
-    status: 'Disponível',
-    responsavel: responsavelNome.trim() || 'Responsável',
-    data: dataHora,
-    observacao: 'Território liberado manualmente pelo responsável para novas designações.',
-    created_at: now.toISOString(),
-  };
-  const updatedHistorico = saveStoredHistorico(historicoItem);
-
-  return { territorios, historico: updatedHistorico };
+export async function tornarTerritoriosDisponiveisEmLote(
+  territorioIds: string[],
+  responsavelNome: string
+): Promise<boolean> {
+  return await firebaseSync.executeTornarDisponivelLoteBatch(territorioIds, responsavelNome);
 }
 
 // -------------------------------------------------------------
@@ -731,10 +423,10 @@ export function getStoredHistorico(): HistoricoTerritorio[] {
   }
 }
 
-export function saveStoredHistorico(item: HistoricoTerritorio): HistoricoTerritorio[] {
+export async function saveStoredHistorico(item: HistoricoTerritorio): Promise<HistoricoTerritorio[]> {
   const current = getStoredHistorico();
   const updated = [item, ...current];
   localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(updated));
-  firebaseSync.saveHistorico(item);
+  await firebaseSync.saveHistorico(item);
   return updated;
 }

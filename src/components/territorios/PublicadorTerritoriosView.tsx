@@ -22,6 +22,8 @@ import {
   concluirTerritorioPublicador,
   estornarTerritorioPublicador,
   solicitarCompartilhamento,
+  isStatusDesignado,
+  isStatusDisponivel,
 } from '../../data/territoriosStorage';
 
 interface PublicadorTerritoriosViewProps {
@@ -47,6 +49,7 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
   // Formulário de solicitação
   const [isSolicitarOpen, setIsSolicitarOpen] = useState<boolean>(false);
   const [nomePublicadorInput, setNomePublicadorInput] = useState<string>('');
+  const [selectedTerritorioSolicitar, setSelectedTerritorioSolicitar] = useState<string>('');
   const [solicitarFeedback, setSolicitarFeedback] = useState<string>('');
   const [solicitarError, setSolicitarError] = useState<string>('');
 
@@ -67,12 +70,19 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
     }
   }, []);
 
+  // Territórios disponíveis para escolha na solicitação
+  const territoriosDisponiveis = React.useMemo(() => {
+    return territorios
+      .filter((t) => isStatusDisponivel(t.status))
+      .sort((a, b) => a.numero - b.numero);
+  }, [territorios]);
+
   // Encontrar territórios atualmente designados para o publicador ativo
   const meusTerritorios = React.useMemo(() => {
     if (!activePublicador.trim()) return [];
     const nomeNormalizado = activePublicador.trim().toLowerCase();
     return territorios.filter(
-      (t) => t.status === 'Designado' && t.designado_para && t.designado_para.trim().toLowerCase() === nomeNormalizado
+      (t) => isStatusDesignado(t.status) && t.designado_para && t.designado_para.trim().toLowerCase() === nomeNormalizado
     );
   }, [territorios, activePublicador]);
 
@@ -95,7 +105,7 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
   }, [transferencias, activePublicador]);
 
   // Enviar solicitação de território
-  const handleSolicitarSubmit = (e: React.FormEvent) => {
+  const handleSolicitarSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const nomeLimpo = nomePublicadorInput.trim();
     if (!nomeLimpo) {
@@ -103,15 +113,18 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
       return;
     }
 
-    createSolicitacao(nomeLimpo);
+    const terId = selectedTerritorioSolicitar || undefined;
     setActivePublicador(nomeLimpo);
     setActivePublicadorState(nomeLimpo);
     setEditPublicadorInput(nomeLimpo);
     setNomePublicadorInput('');
+    setSelectedTerritorioSolicitar('');
     setSolicitarError('');
     setIsSolicitarOpen(false);
     setSolicitarFeedback('Solicitação enviada ao responsável.');
     onNotification('Solicitação de território enviada ao responsável com sucesso!');
+
+    await createSolicitacao(nomeLimpo, terId);
     onDataChange();
   };
 
@@ -137,26 +150,31 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
   };
 
   // CONCLUIR
-  const handleConfirmarConclusao = () => {
+  const handleConfirmarConclusao = async () => {
     if (!concluirTerritorioTarget) return;
-    concluirTerritorioPublicador(concluirTerritorioTarget.id, activePublicador);
+    const num = concluirTerritorioTarget.numero;
+    const targetId = concluirTerritorioTarget.id;
     setConcluirTerritorioTarget(null);
-    onNotification(`Território nº ${concluirTerritorioTarget.numero} concluído. O registro foi enviado ao responsável.`);
+    onNotification(`Território nº ${num} concluído. O registro foi enviado ao responsável.`);
+    await concluirTerritorioPublicador(targetId, activePublicador);
     onDataChange();
   };
 
-  // ESTORNAR
-  const handleConfirmarEstorno = () => {
+  // ESTORNAR (Transação atômica no Firebase: encerra designação, zera vínculo e volta a DISPONÍVEL)
+  const handleConfirmarEstorno = async () => {
     if (!estornarTerritorioTarget) return;
-    estornarTerritorioPublicador(estornarTerritorioTarget.id, activePublicador, motivoEstorno);
+    const num = estornarTerritorioTarget.numero;
+    const targetId = estornarTerritorioTarget.id;
+    const motivo = motivoEstorno;
     setEstornarTerritorioTarget(null);
     setMotivoEstorno('');
-    onNotification(`Território nº ${estornarTerritorioTarget.numero} estornado e devolvido ao responsável.`);
+    onNotification(`Território nº ${num} estornado com sucesso e devolvido ao responsável como disponível.`);
+    await estornarTerritorioPublicador(targetId, activePublicador, motivo);
     onDataChange();
   };
 
   // COMPARTILHAR
-  const handleEnviarCompartilhamento = (e: React.FormEvent) => {
+  const handleEnviarCompartilhamento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!compartilharTerritorioTarget) return;
     const novoLimpo = nomeNovoIrmao.trim();
@@ -165,11 +183,12 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
       return;
     }
 
-    solicitarCompartilhamento(compartilharTerritorioTarget.id, activePublicador, novoLimpo);
+    const targetId = compartilharTerritorioTarget.id;
     setCompartilharTerritorioTarget(null);
     setNomeNovoIrmao('');
     setCompartilharError('');
     onNotification('Solicitação de transferência enviada ao responsável para análise.');
+    await solicitarCompartilhamento(targetId, activePublicador, novoLimpo);
     onDataChange();
   };
 
@@ -227,8 +246,33 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
                   {solicitarError && (
                     <p className="mt-1 text-xs text-red-600 dark:text-red-400">{solicitarError}</p>
                   )}
+                </div>
+
+                <div>
+                  <label htmlFor="select-territorio-solicitar" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    TERRITÓRIO DESEJADO
+                  </label>
+                  {territoriosDisponiveis.length > 0 ? (
+                    <select
+                      id="select-territorio-solicitar"
+                      value={selectedTerritorioSolicitar}
+                      onChange={(e) => setSelectedTerritorioSolicitar(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-hidden focus:ring-1 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="">Qualquer território disponível</option>
+                      {territoriosDisponiveis.map((ter) => (
+                        <option key={ter.id} value={ter.id}>
+                          Nº {ter.numero} — {ter.localidade} ({ter.descricao})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2 rounded border border-amber-200 dark:border-amber-900">
+                      Nenhum território disponível no momento. Ao enviar, seu pedido ficará registrado na fila de espera do irmão responsável.
+                    </p>
+                  )}
                   <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                    O irmão responsável receberá seu pedido e designará o território adequado.
+                    O irmão responsável receberá seu pedido e efetuará a designação.
                   </p>
                 </div>
 

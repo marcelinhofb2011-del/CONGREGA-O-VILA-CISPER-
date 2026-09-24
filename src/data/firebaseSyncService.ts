@@ -23,7 +23,13 @@ import {
   STORAGE_KEY_TRANSFERENCIAS,
   STORAGE_KEY_HISTORICO,
   getStoredTerritorios,
+  getStoredSolicitacoes,
+  getStoredTransferencias,
+  getStoredHistorico,
   isAdminAuthenticated,
+  formatarDataHoje,
+  formatarHoraHoje,
+  formatarDataHoraHoje,
 } from './territoriosStorage';
 import { STORAGE_KEY_DESIGNACOES } from './designacoesStorage';
 import { STORAGE_KEY_CAMPO_FDS, STORAGE_KEY_CAMPO_PROGRAMACAO } from './campoStorage';
@@ -80,6 +86,18 @@ class FirebaseSyncManager {
   private listeners: Array<(status: SyncStatus) => void> = [];
   private unsubscribers: Array<() => void> = [];
 
+  // Caches em memória em tempo real para o módulo de Territórios
+  private territoriosCache: Territorio[] = [];
+  private solicitacoesCache: SolicitacaoTerritorio[] = [];
+  private transferenciasCache: TransferenciaTerritorio[] = [];
+  private historicoCache: HistoricoTerritorio[] = [];
+
+  // Listeners diretos de componentes
+  private territoriosListeners: Array<(lista: Territorio[]) => void> = [];
+  private solicitacoesListeners: Array<(lista: SolicitacaoTerritorio[]) => void> = [];
+  private transferenciasListeners: Array<(lista: TransferenciaTerritorio[]) => void> = [];
+  private historicoListeners: Array<(lista: HistoricoTerritorio[]) => void> = [];
+
   constructor() {
     this.init();
   }
@@ -93,6 +111,52 @@ class FirebaseSyncManager {
     callback(this.status);
     return () => {
       this.listeners = this.listeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public onTerritoriosChange(callback: (lista: Territorio[]) => void): () => void {
+    this.territoriosListeners.push(callback);
+    if (this.territoriosCache.length > 0) {
+      callback(this.territoriosCache);
+    } else {
+      const stored = getStoredTerritorios();
+      if (stored.length > 0) callback(stored);
+    }
+    return () => {
+      this.territoriosListeners = this.territoriosListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public onSolicitacoesChange(callback: (lista: SolicitacaoTerritorio[]) => void): () => void {
+    this.solicitacoesListeners.push(callback);
+    if (this.solicitacoesCache.length > 0) {
+      callback(this.solicitacoesCache);
+    } else {
+      const stored = getStoredSolicitacoes();
+      if (stored.length > 0) callback(stored);
+    }
+    return () => {
+      this.solicitacoesListeners = this.solicitacoesListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public onTransferenciasChange(callback: (lista: TransferenciaTerritorio[]) => void): () => void {
+    this.transferenciasListeners.push(callback);
+    if (this.transferenciasCache.length > 0) {
+      callback(this.transferenciasCache);
+    }
+    return () => {
+      this.transferenciasListeners = this.transferenciasListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public onHistoricoChange(callback: (lista: HistoricoTerritorio[]) => void): () => void {
+    this.historicoListeners.push(callback);
+    if (this.historicoCache.length > 0) {
+      callback(this.historicoCache);
+    }
+    return () => {
+      this.historicoListeners = this.historicoListeners.filter((cb) => cb !== callback);
     };
   }
 
@@ -287,7 +351,15 @@ class FirebaseSyncManager {
         });
 
         lista.sort((a, b) => a.numero - b.numero);
+        this.territoriosCache = lista;
         localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(lista));
+        this.territoriosListeners.forEach((cb) => {
+          try {
+            cb(lista);
+          } catch (e) {
+            console.error('Erro no listener de territórios:', e);
+          }
+        });
         window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: lista }));
       },
       (error) => {
@@ -309,6 +381,16 @@ class FirebaseSyncManager {
       this.setStatus('connected');
     } catch (err) {
       console.warn('Erro ao salvar território no Firestore:', err);
+    }
+  }
+
+  public async deleteTerritorio(id: string): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.TERRITORIOS, id);
+      await deleteDoc(docRef);
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn('Erro ao excluir território no Firestore:', err);
     }
   }
 
@@ -370,6 +452,7 @@ class FirebaseSyncManager {
         });
 
         lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        this.solicitacoesCache = lista;
 
         // Se após a carga inicial houver nova solicitação Pendente criada e este aparelho for do responsável
         if (initialLoadDone) {
@@ -385,6 +468,13 @@ class FirebaseSyncManager {
         initialLoadDone = true;
 
         localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(lista));
+        this.solicitacoesListeners.forEach((cb) => {
+          try {
+            cb(lista);
+          } catch (e) {
+            console.error('Erro no listener de solicitações:', e);
+          }
+        });
         window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: lista }));
       },
       (error) => {
@@ -463,7 +553,15 @@ class FirebaseSyncManager {
         const lista: TransferenciaTerritorio[] = [];
         snapshot.forEach((d) => lista.push(d.data() as TransferenciaTerritorio));
         lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        this.transferenciasCache = lista;
         localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(lista));
+        this.transferenciasListeners.forEach((cb) => {
+          try {
+            cb(lista);
+          } catch (e) {
+            console.error('Erro no listener de transferências:', e);
+          }
+        });
         window.dispatchEvent(new CustomEvent('transferencias-firebase-updated', { detail: lista }));
       },
       (error) => console.warn('Falha no listener Transferências:', error)
@@ -502,7 +600,15 @@ class FirebaseSyncManager {
         const lista: HistoricoTerritorio[] = [];
         snapshot.forEach((d) => lista.push(d.data() as HistoricoTerritorio));
         lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        this.historicoCache = lista;
         localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(lista));
+        this.historicoListeners.forEach((cb) => {
+          try {
+            cb(lista);
+          } catch (e) {
+            console.error('Erro no listener de histórico:', e);
+          }
+        });
         window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: lista }));
       },
       (error) => console.warn('Falha no listener Histórico:', error)
@@ -517,6 +623,650 @@ class FirebaseSyncManager {
       this.setStatus('connected');
     } catch (err) {
       console.warn('Erro ao salvar histórico no Firestore:', err);
+    }
+  }
+
+  // =========================================================================
+  // TRANSAÇÕES ATÔMICAS DO MÓDULO DE TERRITÓRIOS (FONTE ÚNICA DA VERDADE)
+  // =========================================================================
+
+  /**
+   * 1. Publicador solicita território:
+   * Cria a solicitação no Firestore.
+   * Se um território foi escolhido, atualiza o status dele para "Solicitado".
+   * Registra a solicitação no histórico permanente.
+   */
+  public async executeSolicitacaoBatch(
+    nomePublicador: string,
+    territorioId?: string
+  ): Promise<SolicitacaoTerritorio | null> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHoje = formatarDataHoje();
+      const horaHoje = formatarHoraHoje();
+      const solId = String(Date.now());
+
+      let terObj: Territorio | undefined;
+      if (territorioId) {
+        terObj = this.territoriosCache.find((t) => t.id === territorioId);
+        if (!terObj) {
+          const stored = getStoredTerritorios();
+          terObj = stored.find((t) => t.id === territorioId);
+        }
+      }
+
+      const nova: SolicitacaoTerritorio = {
+        id: solId,
+        nome_publicador: nomePublicador.trim(),
+        data_solicitacao: dataHoje,
+        hora_solicitacao: horaHoje,
+        status: 'Pendente',
+        territorio_id: terObj ? terObj.id : undefined,
+        territorio_numero: terObj ? terObj.numero : undefined,
+        created_at: now.toISOString(),
+      };
+
+      const solRef = doc(db, COLLECTIONS.SOLICITACOES, solId);
+      batch.set(solRef, nova);
+
+      if (terObj) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, terObj.id);
+        batch.update(terRef, {
+          status: 'Solicitado',
+          solicitado_por: nomePublicador.trim(),
+          solicitacao_id: solId,
+          data_solicitacao: dataHoje,
+          hora_solicitacao: horaHoje,
+          updated_at: now.toISOString(),
+        });
+      }
+
+      const histId = String(Date.now() + 1);
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: terObj?.id,
+        territorio_numero: terObj ? terObj.numero : 0,
+        territorio_localidade: terObj?.localidade,
+        publicador: nomePublicador.trim(),
+        acao: 'Solicitação',
+        status: 'Solicitado',
+        responsavel: 'Publicador',
+        data: `${dataHoje} às ${horaHoje}`,
+        observacao: terObj
+          ? `Solicitação do Território Nº ${terObj.numero} (${terObj.localidade}) enviada ao responsável.`
+          : 'Solicitação de território enviada ao responsável.',
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+
+      // Notifica responsáveis via push se habilitado
+      dispatchPushNotificationToResponsaveis(nova).catch((pushErr) => {
+        console.warn('Erro ao despachar push para responsáveis:', pushErr);
+      });
+
+      return nova;
+    } catch (err) {
+      console.error('Erro ao executar batch de solicitação no Firestore:', err);
+      return null;
+    }
+  }
+
+  /**
+   * 2. Responsável designa território:
+   * Altera status do território para "Designado" com o publicador vinculado.
+   * Marca a solicitação como "Designado" (sai imediatamente da lista de pendentes).
+   * Registra a designação no histórico permanente.
+   */
+  public async executeDesignacaoBatch(
+    solicitacaoId: string,
+    territorioId: string,
+    responsavelNome: string,
+    publicadorNomeOverride?: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHoje = formatarDataHoje();
+      const horaHoje = formatarHoraHoje();
+
+      const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
+        getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
+      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+        getStoredTerritorios().find((t) => t.id === territorioId);
+
+      const publicadorNome = (publicadorNomeOverride || sol?.nome_publicador || '').trim();
+
+      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+      batch.update(terRef, {
+        status: 'Designado',
+        designado_para: publicadorNome,
+        data_ultima_designacao: dataHoje,
+        hora_ultima_designacao: horaHoje,
+        responsavel_designacao: responsavelNome.trim(),
+        solicitado_por: null,
+        solicitacao_id: null,
+        data_conclusao: null,
+        data_estorno: null,
+        motivo_estorno: null,
+        data_ultimo_retorno_sort: null,
+        updated_at: now.toISOString(),
+      });
+
+      if (solicitacaoId) {
+        const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
+        batch.update(solRef, {
+          status: 'Designado',
+          territorio_id: territorioId,
+          territorio_numero: ter ? ter.numero : 0,
+          data_designacao: dataHoje,
+          responsavel: responsavelNome.trim(),
+        });
+      }
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: publicadorNome,
+        acao: 'Designação',
+        status: 'Designado',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data: `${dataHoje} às ${horaHoje}`,
+        observacao: `Designado para ${publicadorNome}`,
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao executar batch de designação no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 3. Publicador estorna território:
+   * Encerra a designação atual.
+   * Remove o vínculo ativo com o publicador (designado_para = null).
+   * Altera imediatamente o estado do território para "Disponível".
+   * Registra no histórico permanente.
+   * Ambas as telas atualizam em tempo real via snapshot do Firestore.
+   */
+  public async executeEstornoBatch(
+    territorioId: string,
+    publicadorNome: string,
+    motivo?: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+
+      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+        getStoredTerritorios().find((t) => t.id === territorioId);
+
+      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+      batch.update(terRef, {
+        status: 'Disponível',
+        designado_para: null,
+        responsavel_designacao: null,
+        data_ultima_designacao: null,
+        hora_ultima_designacao: null,
+        solicitado_por: null,
+        solicitacao_id: null,
+        data_estorno: dataHora,
+        motivo_estorno: motivo?.trim() || null,
+        data_conclusao: null,
+        data_ultimo_retorno_sort: null,
+        updated_at: now.toISOString(),
+      });
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
+        acao: 'Estorno',
+        status: 'Disponível',
+        responsavel: 'Publicador',
+        data: dataHora,
+        observacao: motivo?.trim()
+          ? `Devolvido ao responsável. Motivo: ${motivo.trim()}`
+          : 'Devolvido ao responsável antes da conclusão.',
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao executar batch de estorno no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 4. Publicador conclui território:
+   * Altera status do território para "Concluído".
+   * Registra a conclusão no histórico permanente.
+   */
+  public async executeConclusaoBatch(
+    territorioId: string,
+    publicadorNome: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+
+      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+        getStoredTerritorios().find((t) => t.id === territorioId);
+
+      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+      batch.update(terRef, {
+        status: 'Concluído',
+        data_conclusao: dataHora,
+        data_ultimo_retorno_sort: now.toISOString(),
+        solicitado_por: null,
+        solicitacao_id: null,
+        updated_at: now.toISOString(),
+      });
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
+        acao: 'Conclusão',
+        status: 'Concluído',
+        responsavel: 'Publicador',
+        data: dataHora,
+        observacao: 'Trabalho de pregação concluído pelo publicador. Aguarda decisão do responsável.',
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao executar batch de conclusão no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 5. Responsável cancela solicitação:
+   * Marca solicitação como Cancelada (ou remove).
+   * Se havia território vinculado ou solicitado, devolve o território para "Disponível".
+   * Registra no histórico.
+   */
+  public async executeCancelamentoSolicitacaoBatch(
+    solicitacaoId: string,
+    responsavelNome?: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHoje = formatarDataHoje();
+      const horaHoje = formatarHoraHoje();
+
+      const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
+        getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
+
+      const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
+      batch.update(solRef, { status: 'Cancelada' });
+
+      // Se havia território vinculado à solicitação, restaura para Disponível
+      let ter: Territorio | undefined;
+      if (sol?.territorio_id) {
+        ter = this.territoriosCache.find((t) => t.id === sol.territorio_id);
+      }
+      if (!ter && sol) {
+        ter = this.territoriosCache.find(
+          (t) => t.solicitacao_id === solicitacaoId || (t.status === 'Solicitado' && t.solicitado_por === sol.nome_publicador)
+        );
+      }
+
+      if (ter) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, ter.id);
+        batch.update(terRef, {
+          status: 'Disponível',
+          solicitado_por: null,
+          solicitacao_id: null,
+          updated_at: now.toISOString(),
+        });
+      }
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: ter?.id,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: sol ? sol.nome_publicador : 'Publicador',
+        acao: 'Solicitação Cancelada',
+        status: 'Cancelada',
+        responsavel: responsavelNome?.trim() || 'Irmão Responsável',
+        data: `${dataHoje} às ${horaHoje}`,
+        observacao: 'Solicitação cancelada pelo responsável. Território liberado.',
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao executar cancelamento no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 6. Responsável torna território disponível (Novo Ciclo):
+   * Altera status para "Disponível" e limpa vínculos anteriores.
+   */
+  public async executeTornarDisponivelBatch(
+    territorioId: string,
+    responsavelNome: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+
+      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+        getStoredTerritorios().find((t) => t.id === territorioId);
+      const anteriorPublicador = ter?.designado_para;
+
+      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+      batch.update(terRef, {
+        status: 'Disponível',
+        designado_para: null,
+        responsavel_designacao: null,
+        data_ultima_designacao: null,
+        hora_ultima_designacao: null,
+        data_conclusao: null,
+        data_estorno: null,
+        motivo_estorno: null,
+        solicitado_por: null,
+        solicitacao_id: null,
+        data_ultimo_retorno_sort: null,
+        updated_at: now.toISOString(),
+      });
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: anteriorPublicador || '-',
+        acao: 'Disponibilizado para Novo Ciclo',
+        status: 'Disponível',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data: dataHora,
+        observacao: 'Território liberado manualmente pelo responsável para novas designações.',
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao disponibilizar território no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 7. Responsável torna múltiplos territórios disponíveis em lote:
+   */
+  public async executeTornarDisponivelLoteBatch(
+    territorioIds: string[],
+    responsavelNome: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+
+      for (let i = 0; i < territorioIds.length; i++) {
+        const id = territorioIds[i];
+        const ter = this.territoriosCache.find((t) => t.id === id) ||
+          getStoredTerritorios().find((t) => t.id === id);
+
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, id);
+        batch.update(terRef, {
+          status: 'Disponível',
+          designado_para: null,
+          responsavel_designacao: null,
+          data_ultima_designacao: null,
+          hora_ultima_designacao: null,
+          data_conclusao: null,
+          data_estorno: null,
+          motivo_estorno: null,
+          solicitado_por: null,
+          solicitacao_id: null,
+          data_ultimo_retorno_sort: null,
+          updated_at: now.toISOString(),
+        });
+
+        const histId = String(Date.now() + i);
+        const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+        const histItem: HistoricoTerritorio = {
+          id: histId,
+          territorio_id: id,
+          territorio_numero: ter ? ter.numero : 0,
+          territorio_localidade: ter?.localidade,
+          publicador: ter?.designado_para || '-',
+          acao: 'Disponibilizado para Novo Ciclo',
+          status: 'Disponível',
+          responsavel: responsavelNome.trim() || 'Responsável',
+          data: dataHora,
+          observacao: 'Território liberado em lote para novas designações.',
+          created_at: now.toISOString(),
+        };
+        batch.set(histRef, histItem);
+      }
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao disponibilizar lote no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 8. Publicador solicita compartilhamento (transferência):
+   */
+  public async executeSolicitarTransferenciaBatch(
+    territorioId: string,
+    publicadorAtual: string,
+    novoPublicador: string
+  ): Promise<TransferenciaTerritorio | null> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHoje = formatarDataHoje();
+      const horaHoje = formatarHoraHoje();
+      const transfId = String(Date.now());
+
+      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+        getStoredTerritorios().find((t) => t.id === territorioId);
+
+      const nova: TransferenciaTerritorio = {
+        id: transfId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador_atual: publicadorAtual.trim(),
+        novo_publicador: novoPublicador.trim(),
+        data_solicitacao: dataHoje,
+        hora_solicitacao: horaHoje,
+        status: 'Aguardando aprovação',
+        created_at: now.toISOString(),
+      };
+
+      const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transfId);
+      batch.set(transfRef, nova);
+
+      const histId = String(Date.now() + 1);
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: territorioId,
+        territorio_numero: ter ? ter.numero : 0,
+        territorio_localidade: ter?.localidade,
+        publicador: publicadorAtual.trim(),
+        acao: 'Compartilhamento Solicitado',
+        status: 'Aguardando aprovação',
+        responsavel: 'Publicador',
+        data: `${dataHoje} às ${horaHoje}`,
+        observacao: `Solicitada transferência para o irmão ${novoPublicador.trim()}`,
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return nova;
+    } catch (err) {
+      console.error('Erro ao solicitar transferência no Firestore:', err);
+      return null;
+    }
+  }
+
+  /**
+   * 9. Responsável aprova transferência:
+   */
+  public async executeTransferenciaAprovadaBatch(
+    transferenciaId: string,
+    responsavelNome: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+      const dataHoje = formatarDataHoje();
+      const horaHoje = formatarHoraHoje();
+
+      const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
+        getStoredTransferencias().find((t) => t.id === transferenciaId);
+      if (!transf) return false;
+
+      const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
+      batch.update(transfRef, {
+        status: 'Aprovada',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data_decisao: dataHora,
+      });
+
+      const terRef = doc(db, COLLECTIONS.TERRITORIOS, transf.territorio_id);
+      batch.update(terRef, {
+        status: 'Designado',
+        designado_para: transf.novo_publicador,
+        data_ultima_designacao: dataHoje,
+        hora_ultima_designacao: horaHoje,
+        responsavel_designacao: responsavelNome.trim(),
+        updated_at: now.toISOString(),
+      });
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: transf.territorio_id,
+        territorio_numero: transf.territorio_numero,
+        territorio_localidade: transf.territorio_localidade,
+        publicador: transf.novo_publicador,
+        acao: 'Transferência Aprovada',
+        status: 'Designado',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data: dataHora,
+        observacao: `Transferido de ${transf.publicador_atual} para ${transf.novo_publicador}`,
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao aprovar transferência no Firestore:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 10. Responsável recusa transferência:
+   */
+  public async executeTransferenciaRecusadaBatch(
+    transferenciaId: string,
+    responsavelNome: string
+  ): Promise<boolean> {
+    try {
+      const batch = writeBatch(db);
+      const now = new Date();
+      const dataHora = formatarDataHoraHoje();
+
+      const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
+        getStoredTransferencias().find((t) => t.id === transferenciaId);
+      if (!transf) return false;
+
+      const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
+      batch.update(transfRef, {
+        status: 'Recusada',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data_decisao: dataHora,
+      });
+
+      const histId = String(Date.now());
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      const histItem: HistoricoTerritorio = {
+        id: histId,
+        territorio_id: transf.territorio_id,
+        territorio_numero: transf.territorio_numero,
+        territorio_localidade: transf.territorio_localidade,
+        publicador: transf.publicador_atual,
+        acao: 'Transferência Recusada',
+        status: 'Recusada',
+        responsavel: responsavelNome.trim() || 'Responsável',
+        data: dataHora,
+        observacao: `Pedido de transferência para ${transf.novo_publicador} foi recusado pelo responsável.`,
+        created_at: now.toISOString(),
+      };
+      batch.set(histRef, histItem);
+
+      await batch.commit();
+      this.setStatus('connected');
+      return true;
+    } catch (err) {
+      console.error('Erro ao recusar transferência no Firestore:', err);
+      return false;
     }
   }
 

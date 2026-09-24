@@ -32,6 +32,12 @@ import {
   aprovarTransferencia,
   recusarTransferencia,
   tornarTerritorioDisponivel,
+  tornarTerritoriosDisponiveisEmLote,
+  isStatusDisponivel,
+  isStatusSolicitado,
+  isStatusDesignado,
+  isStatusConcluido,
+  isStatusEstornado,
 } from '../../data/territoriosStorage';
 
 type AdminTab = 'solicitacoes' | 'transferencias' | 'territorios' | 'historico';
@@ -113,28 +119,46 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
   // Territórios disponíveis para seleção na designação
   const territoriosDisponiveis = useMemo(() => {
     return territorios
-      .filter((t) => t.status === 'Disponível')
+      .filter((t) => isStatusDisponivel(t.status))
       .sort((a, b) => a.numero - b.numero);
   }, [territorios]);
 
+  // Solicitações que ainda aguardam atendimento do responsável
+  const pendentesSolicitacoes = useMemo(() => {
+    return solicitacoes.filter((s) => s.status === 'Pendente');
+  }, [solicitacoes]);
+
   // Contadores para os badges das abas
   const pendentesSolicitacoesCount = useMemo(() => {
-    return solicitacoes.filter((s) => s.status === 'Pendente').length;
-  }, [solicitacoes]);
+    return pendentesSolicitacoes.length;
+  }, [pendentesSolicitacoes]);
 
   const pendentesTransferenciasCount = useMemo(() => {
     return transferencias.filter((t) => t.status === 'Aguardando aprovação').length;
   }, [transferencias]);
+
+  // Territórios disponíveis para a designação em análise (inclui o já solicitado pelo irmão, se houver)
+  const territoriosParaDesignar = useMemo(() => {
+    return territorios
+      .filter(
+        (t) =>
+          isStatusDisponivel(t.status) ||
+          (designandoSolicitacao &&
+            (t.id === designandoSolicitacao.territorio_id ||
+              t.solicitacao_id === designandoSolicitacao.id ||
+              (isStatusSolicitado(t.status) && t.solicitado_por === designandoSolicitacao.nome_publicador)))
+      )
+      .sort((a, b) => a.numero - b.numero);
+  }, [territorios, designandoSolicitacao]);
 
   // Território selecionado no modal de designação para exibição dos detalhes
   const selectedTerritorioParaDesignarObj = useMemo(() => {
     return territorios.find((t) => t.id === selectedTerritorioIdParaDesignar) || null;
   }, [territorios, selectedTerritorioIdParaDesignar]);
 
-  // Lista administrativa organizada por STATUS conforme a especificação:
-  // PRIMEIRO: Territórios ativos / que podem ser trabalhados (Disponível, Designado)
-  // DEPOIS: Territórios já concluídos ou estornados (SEMPRE ABAIXO dos demais)
-  // Dentro dos concluídos/estornados: ordenados por data de conclusão/retorno mais recente
+  // Lista administrativa organizada por STATUS:
+  // PRIMEIRO: Territórios ativos / em trabalho (Disponível, Solicitado, Designado)
+  // DEPOIS: Territórios concluídos e estornados que aguardam novo ciclo
   const { territoriosAtivos, territoriosConcluidosEstornados } = useMemo(() => {
     const filtrados = territorios.filter((t) => {
       if (!buscaTerritorio.trim()) return true;
@@ -143,18 +167,18 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
         t.numero.toString().includes(term) ||
         t.localidade.toLowerCase().includes(term) ||
         t.descricao.toLowerCase().includes(term) ||
-        (t.designado_para && t.designado_para.toLowerCase().includes(term))
+        (t.designado_para && t.designado_para.toLowerCase().includes(term)) ||
+        (t.solicitado_por && t.solicitado_por.toLowerCase().includes(term))
       );
     });
 
     const ativos = filtrados
-      .filter((t) => t.status === 'Disponível' || t.status === 'Designado')
+      .filter((t) => isStatusDisponivel(t.status) || isStatusSolicitado(t.status) || isStatusDesignado(t.status))
       .sort((a, b) => a.numero - b.numero);
 
     const concluidosEstornados = filtrados
-      .filter((t) => t.status === 'Concluído' || t.status === 'Estornado')
+      .filter((t) => isStatusConcluido(t.status) || isStatusEstornado(t.status))
       .sort((a, b) => {
-        // Mais recentes primeiro
         const dateA = a.data_ultimo_retorno_sort ? new Date(a.data_ultimo_retorno_sort).getTime() : 0;
         const dateB = b.data_ultimo_retorno_sort ? new Date(b.data_ultimo_retorno_sort).getTime() : 0;
         return dateB - dateA;
@@ -186,46 +210,49 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
   // -------------------------------------------------------------
   const handleOpenDesignarModal = (sol: SolicitacaoTerritorio) => {
     setDesignandoSolicitacao(sol);
-    setSelectedTerritorioIdParaDesignar('');
+    setSelectedTerritorioIdParaDesignar(sol.territorio_id || '');
     setDesignacaoError('');
   };
 
-  const handleConfirmarDesignacao = (e: React.FormEvent) => {
+  const handleConfirmarDesignacao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!designandoSolicitacao) return;
 
     if (!selectedTerritorioIdParaDesignar) {
-      setDesignacaoError('Por favor, selecione um território disponível.');
+      setDesignacaoError('Por favor, selecione um território.');
       return;
     }
 
     const ter = territorios.find((t) => t.id === selectedTerritorioIdParaDesignar);
-    if (!ter || ter.status !== 'Disponível') {
-      setDesignacaoError('O território selecionado não está disponível.');
+    if (!ter || (!isStatusDisponivel(ter.status) && !isStatusSolicitado(ter.status))) {
+      setDesignacaoError('O território selecionado não está disponível para designação.');
       return;
     }
 
     const resp = responsavelDesignacaoNome.trim() || 'Irmão Responsável';
-    designarTerritorioParaSolicitacao(
-      designandoSolicitacao.id,
-      selectedTerritorioIdParaDesignar,
-      resp
-    );
+    const num = ter.numero;
+    const pubNome = designandoSolicitacao.nome_publicador;
+    const solId = designandoSolicitacao.id;
+    const terId = selectedTerritorioIdParaDesignar;
 
     setDesignandoSolicitacao(null);
     setSelectedTerritorioIdParaDesignar('');
     setDesignacaoError('');
-    onNotification(`Território Nº ${ter.numero} designado para ${designandoSolicitacao.nome_publicador}.`);
+    onNotification(`Território Nº ${num} designado para ${pubNome}.`);
+
+    await designarTerritorioParaSolicitacao(solId, terId, resp);
     onDataChange();
   };
 
-  const handleConfirmarCancelamento = () => {
+  const handleConfirmarCancelamento = async () => {
     if (!solicitacaoParaCancelar) return;
     const resp = responsavelDesignacaoNome.trim() || 'Irmão Responsável';
-    cancelarSolicitacaoTerritorio(solicitacaoParaCancelar.id, resp);
+    const solId = solicitacaoParaCancelar.id;
     const publicadorNome = solicitacaoParaCancelar.nome_publicador;
     setSolicitacaoParaCancelar(null);
-    onNotification(`Solicitação de ${publicadorNome} cancelada.`);
+    onNotification(`Solicitação de ${publicadorNome} cancelada. O território foi liberado.`);
+
+    await cancelarSolicitacaoTerritorio(solId, resp);
     onDataChange();
   };
 
@@ -238,24 +265,29 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
     setRecusaMotivo('');
   };
 
-  const handleAprovarTransferencia = () => {
+  const handleAprovarTransferencia = async () => {
     if (!analisandoTransferencia) return;
     const resp = responsavelDecisaoNome.trim() || 'Irmão Responsável';
-    aprovarTransferencia(analisandoTransferencia.id, resp);
+    const trId = analisandoTransferencia.id;
+    const terNum = analisandoTransferencia.territorio_numero;
+    const novoPub = analisandoTransferencia.novo_publicador;
     setAnalisandoTransferencia(null);
-    onNotification(
-      `Transferência aprovada! O Território Nº ${analisandoTransferencia.territorio_numero} agora está vinculado a ${analisandoTransferencia.novo_publicador}.`
-    );
+    onNotification(`Transferência aprovada! O Território Nº ${terNum} agora está vinculado a ${novoPub}.`);
+
+    await aprovarTransferencia(trId, resp);
     onDataChange();
   };
 
-  const handleRecusarTransferencia = () => {
+  const handleRecusarTransferencia = async () => {
     if (!analisandoTransferencia) return;
     const resp = responsavelDecisaoNome.trim() || 'Irmão Responsável';
-    recusarTransferencia(analisandoTransferencia.id, resp);
+    const trId = analisandoTransferencia.id;
+    const terNum = analisandoTransferencia.territorio_numero;
     setAnalisandoTransferencia(null);
     setIsConfirmingRecusa(false);
-    onNotification(`Transferência do Território Nº ${analisandoTransferencia.territorio_numero} recusada. O território permanece com o publicador atual.`);
+    onNotification(`Transferência do Território Nº ${terNum} recusada. O território permanece com o publicador atual.`);
+
+    await recusarTransferencia(trId, resp);
     onDataChange();
   };
 
@@ -288,7 +320,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
     setIsFormTerritorioOpen(true);
   };
 
-  const handleSalvarTerritorio = (e: React.FormEvent) => {
+  const handleSalvarTerritorio = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const numVal = parseInt(formData.numero, 10);
@@ -297,7 +329,6 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
       return;
     }
 
-    // Verificar número duplicado
     const duplicado = territorios.find(
       (t) => t.numero === numVal && t.id !== editingTerritorioId
     );
@@ -337,6 +368,8 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
       data_ultima_designacao: currentItem?.data_ultima_designacao,
       hora_ultima_designacao: currentItem?.hora_ultima_designacao,
       responsavel_designacao: currentItem?.responsavel_designacao,
+      solicitado_por: currentItem?.solicitado_por,
+      solicitacao_id: currentItem?.solicitacao_id,
       data_conclusao: currentItem?.data_conclusao,
       data_estorno: currentItem?.data_estorno,
       motivo_estorno: currentItem?.motivo_estorno,
@@ -344,42 +377,49 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
       created_at: currentItem ? currentItem.created_at : new Date().toISOString(),
     };
 
-    saveStoredTerritorio(itemSalvar);
     setIsFormTerritorioOpen(false);
     setFormError('');
     onNotification(`Território Nº ${numVal} salvo com sucesso!`);
+
+    await saveStoredTerritorio(itemSalvar);
     onDataChange();
   };
 
-  const handleConfirmarExclusaoTerritorio = () => {
+  const handleConfirmarExclusaoTerritorio = async () => {
     if (!deletingTerritorio) return;
-    deleteStoredTerritorio(deletingTerritorio.id);
-    onNotification(`Território Nº ${deletingTerritorio.numero} excluído.`);
+    const num = deletingTerritorio.numero;
+    const targetId = deletingTerritorio.id;
     setDeletingTerritorio(null);
+    onNotification(`Território Nº ${num} excluído.`);
+
+    await deleteStoredTerritorio(targetId);
     onDataChange();
   };
 
   // -------------------------------------------------------------
   // HANDLERS: TORNAR DISPONÍVEL / NOVO CICLO
   // -------------------------------------------------------------
-  const handleConfirmarTornarDisponivel = () => {
+  const handleConfirmarTornarDisponivel = async () => {
     if (!tornandoDisponivelItem) return;
     const resp = responsavelDisponibilizarNome.trim() || 'Irmão Responsável';
-    tornarTerritorioDisponivel(tornandoDisponivelItem.id, resp);
-    onNotification(`Território Nº ${tornandoDisponivelItem.numero} disponibilizado para novo ciclo.`);
+    const num = tornandoDisponivelItem.numero;
+    const targetId = tornandoDisponivelItem.id;
     setTornandoDisponivelItem(null);
+    onNotification(`Território Nº ${num} disponibilizado para novo ciclo.`);
+
+    await tornarTerritorioDisponivel(targetId, resp);
     onDataChange();
   };
 
-  const handleConfirmarNovoCicloLote = () => {
+  const handleConfirmarNovoCicloLote = async () => {
     if (selecionadosParaNovoCiclo.length === 0) return;
     const resp = responsavelDisponibilizarNome.trim() || 'Irmão Responsável';
-    selecionadosParaNovoCiclo.forEach((id) => {
-      tornarTerritorioDisponivel(id, resp);
-    });
-    onNotification(`${selecionadosParaNovoCiclo.length} territórios disponibilizados para novo ciclo.`);
+    const ids = [...selecionadosParaNovoCiclo];
     setSelecionadosParaNovoCiclo([]);
     setIsNovoCicloModalOpen(false);
+    onNotification(`${ids.length} territórios disponibilizados para novo ciclo.`);
+
+    await tornarTerritoriosDisponiveisEmLote(ids, resp);
     onDataChange();
   };
 
@@ -393,42 +433,51 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
   // FUNÇÃO AUXILIAR PARA COR DO STATUS
   // -------------------------------------------------------------
   const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Disponível':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200 dark:bg-emerald-950/70 dark:border-emerald-800/60 dark:text-emerald-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-            Disponível
-          </span>
-        );
-      case 'Designado':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200 dark:bg-blue-950/70 dark:border-blue-800/60 dark:text-blue-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
-            Designado
-          </span>
-        );
-      case 'Concluído':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-semibold text-purple-800 border border-purple-200 dark:bg-purple-950/70 dark:border-purple-800/60 dark:text-purple-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-purple-600 dark:bg-purple-400" />
-            Concluído
-          </span>
-        );
-      case 'Estornado':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:border-amber-800/60 dark:text-amber-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />
-            Estornado
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-300">
-            {status}
-          </span>
-        );
+    if (isStatusDisponivel(status)) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200 dark:bg-emerald-950/70 dark:border-emerald-800/60 dark:text-emerald-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+          Disponível
+        </span>
+      );
     }
+    if (isStatusSolicitado(status)) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:border-amber-800/60 dark:text-amber-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+          Solicitado
+        </span>
+      );
+    }
+    if (isStatusDesignado(status)) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200 dark:bg-blue-950/70 dark:border-blue-800/60 dark:text-blue-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+          Designado
+        </span>
+      );
+    }
+    if (isStatusConcluido(status)) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-semibold text-purple-800 border border-purple-200 dark:bg-purple-950/70 dark:border-purple-800/60 dark:text-purple-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-600 dark:bg-purple-400" />
+          Concluído
+        </span>
+      );
+    }
+    if (isStatusEstornado(status)) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:border-amber-800/60 dark:text-amber-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-400" />
+          Estornado
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+        {status}
+      </span>
+    );
   };
 
   return (
@@ -1092,9 +1141,9 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                   htmlFor="select-territorio-designar"
                   className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300"
                 >
-                  SELECIONE O TERRITÓRIO (SOMENTE DISPONÍVEIS)
+                  SELECIONE O TERRITÓRIO
                 </label>
-                {territoriosDisponiveis.length === 0 ? (
+                {territoriosParaDesignar.length === 0 ? (
                   <div className="mt-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300">
                     <p className="font-semibold">Nenhum território disponível no momento!</p>
                     <p className="mt-1">
@@ -1110,9 +1159,9 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                     className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                   >
                     <option value="">-- Escolha o território --</option>
-                    {territoriosDisponiveis.map((ter) => (
+                    {territoriosParaDesignar.map((ter) => (
                       <option key={ter.id} value={ter.id}>
-                        Nº {ter.numero} — {ter.localidade} ({ter.descricao})
+                        Nº {ter.numero} — {ter.localidade} ({ter.descricao}){isStatusSolicitado(ter.status) ? ' [Solicitado]' : ''}
                       </option>
                     ))}
                   </select>
