@@ -57,6 +57,22 @@ export default function App() {
     localStorage.setItem('vila_cisper_text_size', textSize);
   }, [textSize]);
 
+  // Read URL query parameters (e.g. ?screen=territorios when clicking push notification)
+  useEffect(() => {
+    const handleUrlNav = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const screenParam = params.get('screen') as ScreenId | null;
+        if (screenParam) {
+          setCurrentScreen(screenParam);
+        }
+      } catch {}
+    };
+    handleUrlNav();
+    window.addEventListener('popstate', handleUrlNav);
+    return () => window.removeEventListener('popstate', handleUrlNav);
+  }, []);
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };

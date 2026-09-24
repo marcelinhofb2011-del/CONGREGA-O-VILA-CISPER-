@@ -1,6 +1,91 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
+    <script>
+      // HMR is disabled in AI Studio; intercept Vite HMR WebSocket and ignore connection messages
+      (function() {
+        // 1. Intercept WebSocket requests for Vite HMR
+        const OriginalWebSocket = window.WebSocket;
+        if (OriginalWebSocket) {
+          function PatchedWebSocket(url, protocols) {
+            const isViteHmr =
+              (typeof protocols === 'string' && protocols === 'vite-hmr') ||
+              (Array.isArray(protocols) && protocols.includes('vite-hmr')) ||
+              (typeof url === 'string' && (url.includes('vite-hmr') || url.includes('24678') || url.includes('/@vite')));
+
+            if (isViteHmr) {
+              const target = new EventTarget();
+              Object.setPrototypeOf(target, OriginalWebSocket.prototype);
+              target.readyState = 1; // WebSocket.OPEN
+              target.CONNECTING = 0;
+              target.OPEN = 1;
+              target.CLOSING = 2;
+              target.CLOSED = 3;
+              target.url = String(url);
+              target.protocol = 'vite-hmr';
+              target.bufferedAmount = 0;
+              target.binaryType = 'blob';
+              target.send = function() {};
+              target.close = function() {
+                target.readyState = 3;
+                try { target.dispatchEvent(new Event('close')); } catch (_) {}
+              };
+              setTimeout(() => {
+                try { target.dispatchEvent(new Event('open')); } catch (_) {}
+              }, 0);
+              return target;
+            }
+            return new OriginalWebSocket(url, protocols);
+          }
+
+          PatchedWebSocket.prototype = OriginalWebSocket.prototype;
+          PatchedWebSocket.CONNECTING = 0;
+          PatchedWebSocket.OPEN = 1;
+          PatchedWebSocket.CLOSING = 2;
+          PatchedWebSocket.CLOSED = 3;
+          window.WebSocket = PatchedWebSocket;
+        }
+
+        // 2. Suppress console and window errors related to Vite / WebSocket
+        const isViteMessage = function(item) {
+          if (!item) return false;
+          const str = typeof item === 'string' ? item : (item.message || item.stack || String(item));
+          return (
+            str.includes('[vite]') ||
+            str.includes('vite-hmr') ||
+            str.includes('WebSocket') ||
+            str.includes('websocket') ||
+            str.includes('24678')
+          );
+        };
+
+        const origError = console.error;
+        console.error = function(...args) {
+          if (args.some(isViteMessage)) return;
+          origError.apply(console, args);
+        };
+
+        const origWarn = console.warn;
+        console.warn = function(...args) {
+          if (args.some(isViteMessage)) return;
+          origWarn.apply(console, args);
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isViteMessage(event?.reason)) {
+            event.preventDefault();
+            event.stopImmediatePropagation?.();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          if (isViteMessage(event?.message) || isViteMessage(event?.error)) {
+            event.preventDefault();
+            event.stopImmediatePropagation?.();
+          }
+        }, true);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CONGREGAÇÃO VILA CISPER</title>

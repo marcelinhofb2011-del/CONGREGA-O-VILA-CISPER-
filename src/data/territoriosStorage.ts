@@ -70,12 +70,13 @@ export interface HistoricoTerritorio {
 
 // Chaves de armazenamento local
 export const STORAGE_KEY_TERRITORIOS = 'vila_cisper_territorios_lista';
-const STORAGE_KEY_SOLICITACOES = 'vila_cisper_territorios_solicitacoes';
-const STORAGE_KEY_TRANSFERENCIAS = 'vila_cisper_territorios_transferencias';
-const STORAGE_KEY_HISTORICO = 'vila_cisper_territorios_historico';
-const STORAGE_KEY_ADMIN_SENHA = 'vila_cisper_admin_senha';
-const STORAGE_KEY_PUBLICADOR_ATIVO = 'vila_cisper_publicador_ativo';
-const SESSION_KEY_ADMIN_AUTH = 'vila_cisper_admin_auth_session';
+export const STORAGE_KEY_SOLICITACOES = 'vila_cisper_territorios_solicitacoes';
+export const STORAGE_KEY_TRANSFERENCIAS = 'vila_cisper_territorios_transferencias';
+export const STORAGE_KEY_HISTORICO = 'vila_cisper_territorios_historico';
+export const STORAGE_KEY_ADMIN_SENHA = 'vila_cisper_admin_senha';
+export const STORAGE_KEY_PUBLICADOR_ATIVO = 'vila_cisper_publicador_ativo';
+export const SESSION_KEY_ADMIN_AUTH = 'vila_cisper_admin_auth_session';
+export const STORAGE_KEY_ADMIN_PERSISTED = 'vila_cisper_admin_auth_persisted';
 
 // Senha padrão inicial caso o responsável ainda não tenha alterado
 const SENHA_PADRAO_INICIAL = 'cisper2026';
@@ -138,8 +139,10 @@ export function setAdminAuthenticated(auth: boolean): void {
   try {
     if (auth) {
       sessionStorage.setItem(SESSION_KEY_ADMIN_AUTH, 'true');
+      localStorage.setItem(STORAGE_KEY_ADMIN_PERSISTED, 'true');
     } else {
       sessionStorage.removeItem(SESSION_KEY_ADMIN_AUTH);
+      localStorage.removeItem(STORAGE_KEY_ADMIN_PERSISTED);
     }
   } catch {
     // sessionStorage indisponível
@@ -148,7 +151,10 @@ export function setAdminAuthenticated(auth: boolean): void {
 
 export function isAdminAuthenticated(): boolean {
   try {
-    return sessionStorage.getItem(SESSION_KEY_ADMIN_AUTH) === 'true';
+    return (
+      sessionStorage.getItem(SESSION_KEY_ADMIN_AUTH) === 'true' ||
+      localStorage.getItem(STORAGE_KEY_ADMIN_PERSISTED) === 'true'
+    );
   } catch {
     return false;
   }
@@ -255,6 +261,7 @@ export function createSolicitacao(nomePublicador: string): SolicitacaoTerritorio
 
   const updated = [nova, ...current];
   localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(updated));
+  firebaseSync.saveSolicitacao(nova, true);
 
   // Registrar no histórico permanente
   const historicoItem: HistoricoTerritorio = {
@@ -313,6 +320,7 @@ export function designarTerritorioParaSolicitacao(
     responsavel: responsavelNome.trim(),
   };
   localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(solicitacoes));
+  firebaseSync.saveSolicitacao(solicitacoes[solIndex], false);
 
   // 2. Atualizar o território para "Designado"
   territorios[terIndex] = {
@@ -369,6 +377,7 @@ export function cancelarSolicitacaoTerritorio(
   // 1. Remover a solicitação da lista de solicitações pendentes
   const updatedSolicitacoes = solicitacoes.filter((s) => s.id !== solicitacaoId);
   localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(updatedSolicitacoes));
+  firebaseSync.deleteSolicitacao(solicitacaoId);
 
   // 2. Registrar a solicitação como Cancelada no histórico permanente
   const historicoItem: HistoricoTerritorio = {
@@ -512,6 +521,7 @@ export function solicitarCompartilhamento(
 
   const updatedTransf = [nova, ...currentTransf];
   localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(updatedTransf));
+  firebaseSync.saveTransferencia(nova);
 
   // Registrar no histórico permanente
   const historicoItem: HistoricoTerritorio = {
@@ -571,6 +581,7 @@ export function aprovarTransferencia(
     data_decisao: dataHora,
   };
   localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(transferencias));
+  firebaseSync.saveTransferencia(transferencias[tIndex]);
 
   // 2. Atualizar território (mantém como DESIGNADO, NÃO passa por Disponível!)
   const terIndex = territorios.findIndex((t) => t.id === transf.territorio_id);
@@ -629,6 +640,7 @@ export function recusarTransferencia(
     data_decisao: dataHora,
   };
   localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(transferencias));
+  firebaseSync.saveTransferencia(transferencias[tIndex]);
 
   // O território permanece com o publicador atual, sem alteração
 
@@ -723,5 +735,6 @@ export function saveStoredHistorico(item: HistoricoTerritorio): HistoricoTerrito
   const current = getStoredHistorico();
   const updated = [item, ...current];
   localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(updated));
+  firebaseSync.saveHistorico(item);
   return updated;
 }

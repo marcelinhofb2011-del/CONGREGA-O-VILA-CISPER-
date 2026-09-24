@@ -7,6 +7,10 @@ import {
   Eye,
   EyeOff,
   X,
+  Bell,
+  BellRing,
+  BellOff,
+  Send,
 } from 'lucide-react';
 import {
   Territorio,
@@ -22,6 +26,13 @@ import {
   setAdminAuthenticated,
   updateAdminPassword,
 } from '../data/territoriosStorage';
+import {
+  isPushNotificationSupported,
+  isDevicePushEnabled,
+  registerResponsiblePushDevice,
+  disableResponsiblePushDevice,
+  sendTestNotificationToResponsible,
+} from '../lib/pushNotificationService';
 import { PublicadorTerritoriosView } from '../components/territorios/PublicadorTerritoriosView';
 import { AdminTerritoriosView } from '../components/territorios/AdminTerritoriosView';
 
@@ -42,6 +53,19 @@ export const TerritoriosView: React.FC = () => {
   // Notificação temporária
   const [notification, setNotification] = useState<string>('');
 
+  // Estados de Notificações Push (Área do Responsável)
+  const [pushSupported, setPushSupported] = useState<boolean>(false);
+  const [pushEnabled, setPushEnabled] = useState<boolean>(false);
+  const [isActivatingPush, setIsActivatingPush] = useState<boolean>(false);
+  const [isSendingTestPush, setIsSendingTestPush] = useState<boolean>(false);
+  const [pushDismissed, setPushDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('vila_cisper_push_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   // Modal para alteração de senha administrativa
   const [showTrocarSenhaModal, setShowTrocarSenhaModal] = useState<boolean>(false);
   const [senhaAtualInput, setSenhaAtualInput] = useState<string>('');
@@ -60,18 +84,100 @@ export const TerritoriosView: React.FC = () => {
     setIsAdmin(isAdminAuthenticated());
     recarregarDados();
 
-    const handleFirebaseUpdate = (e: Event) => {
+    const handleTerritoriosUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<Territorio[]>;
       if (customEvent.detail && Array.isArray(customEvent.detail)) {
         setTerritorios(customEvent.detail);
       }
     };
 
-    window.addEventListener('territorios-firebase-updated', handleFirebaseUpdate);
+    const handleSolicitacoesUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<SolicitacaoTerritorio[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setSolicitacoes(customEvent.detail);
+      }
+    };
+
+    const handleTransferenciasUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<TransferenciaTerritorio[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setTransferencias(customEvent.detail);
+      }
+    };
+
+    const handleHistoricoUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<HistoricoTerritorio[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setHistorico(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('territorios-firebase-updated', handleTerritoriosUpdate);
+    window.addEventListener('solicitacoes-firebase-updated', handleSolicitacoesUpdate);
+    window.addEventListener('transferencias-firebase-updated', handleTransferenciasUpdate);
+    window.addEventListener('historico-firebase-updated', handleHistoricoUpdate);
+
     return () => {
-      window.removeEventListener('territorios-firebase-updated', handleFirebaseUpdate);
+      window.removeEventListener('territorios-firebase-updated', handleTerritoriosUpdate);
+      window.removeEventListener('solicitacoes-firebase-updated', handleSolicitacoesUpdate);
+      window.removeEventListener('transferencias-firebase-updated', handleTransferenciasUpdate);
+      window.removeEventListener('historico-firebase-updated', handleHistoricoUpdate);
     };
   }, []);
+
+  // Verificar status de notificações push
+  useEffect(() => {
+    const supported = isPushNotificationSupported();
+    setPushSupported(supported);
+    if (supported) {
+      setPushEnabled(isDevicePushEnabled());
+    }
+  }, [isAdmin]);
+
+  const handleEnablePush = async () => {
+    setIsActivatingPush(true);
+    try {
+      const res = await registerResponsiblePushDevice();
+      setNotification(res.message);
+      if (res.success) {
+        setPushEnabled(true);
+        setPushDismissed(false);
+        try {
+          localStorage.removeItem('vila_cisper_push_dismissed');
+        } catch {}
+      } else if (res.permission === 'granted') {
+        setPushEnabled(false);
+      }
+    } catch (err: any) {
+      console.error('Erro ao ativar notificações:', err);
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        setNotification('As notificações foram autorizadas, mas este dispositivo ainda não foi registrado para recebê-las.');
+      } else {
+        setNotification('Permissão de notificações ainda não definida.');
+      }
+    } finally {
+      setIsActivatingPush(false);
+    }
+  };
+
+  const handleDismissPush = () => {
+    setPushDismissed(true);
+    try {
+      localStorage.setItem('vila_cisper_push_dismissed', 'true');
+    } catch {}
+  };
+
+  const handleTestPush = async () => {
+    setIsSendingTestPush(true);
+    try {
+      const res = await sendTestNotificationToResponsible();
+      setNotification(res.message);
+    } catch {
+      setNotification('Erro ao disparar notificação de teste.');
+    } finally {
+      setIsSendingTestPush(false);
+    }
+  };
 
   // Limpar notificação
   useEffect(() => {
@@ -160,7 +266,39 @@ export const TerritoriosView: React.FC = () => {
                 Acesso do Responsável
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {pushSupported && (
+                  <>
+                    {pushEnabled ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        <BellRing className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Notificações Ativas</span>
+                        <button
+                          type="button"
+                          id="btn-testar-push"
+                          onClick={handleTestPush}
+                          disabled={isSendingTestPush}
+                          title="Enviar notificação de teste para este dispositivo"
+                          className="ml-1 text-[11px] font-bold underline hover:text-emerald-950 dark:hover:text-white"
+                        >
+                          {isSendingTestPush ? 'Testando...' : 'Testar'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        id="btn-ativar-notificacoes-header"
+                        onClick={handleEnablePush}
+                        disabled={isActivatingPush}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300 transition-colors"
+                        title="Ativar notificações push no aparelho"
+                      >
+                        <Bell className="h-3.5 w-3.5" />
+                        <span>{isActivatingPush ? 'Ativando...' : 'Ativar Notificações'}</span>
+                      </button>
+                    )}
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowTrocarSenhaModal(true)}
@@ -183,6 +321,47 @@ export const TerritoriosView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* BANNER DE SOLICITAÇÃO DE PERMISSÃO DE NOTIFICAÇÕES (RESPONSÁVEL) */}
+      {isAdmin && pushSupported && !pushEnabled && !pushDismissed && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                <BellRing className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                  Notificações de Novas Solicitações
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                  Permitir notificações para receber avisos quando um irmão solicitar um território.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                id="btn-recusar-push-banner"
+                onClick={handleDismissPush}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                Agora não
+              </button>
+              <button
+                type="button"
+                id="btn-ativar-push-banner"
+                onClick={handleEnablePush}
+                disabled={isActivatingPush}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                {isActivatingPush ? 'Ativando...' : 'Permitir Notificações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notificação temporária */}
       {notification && (

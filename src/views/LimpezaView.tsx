@@ -406,8 +406,8 @@ export const LimpezaView: React.FC = () => {
               : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
-          <Users className="h-4 w-4" />
-          <span>Composição dos Grupos</span>
+          <Calendar className="h-4 w-4" />
+          <span>Intervalos por Grupo</span>
         </button>
       </div>
 
@@ -425,7 +425,7 @@ export const LimpezaView: React.FC = () => {
               type="text"
               value={buscaIrmao}
               onChange={(e) => setBuscaIrmao(e.target.value)}
-              placeholder="Consultar irmão, grupo ou data..."
+              placeholder="Consultar grupo, intervalo ou responsável..."
               className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
             {buscaIrmao && (
@@ -535,14 +535,14 @@ export const LimpezaView: React.FC = () => {
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  {/* Mês e Dias */}
+                  {/* Mês e Intervalo de Dias */}
                   <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
                       <Calendar className="h-5 w-5" />
                     </div>
                     <div>
                       <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Data / Dias:
+                        Intervalo da Data / Dias:
                       </span>
                       <span className="text-lg font-black text-slate-900 dark:text-white">
                         {escalaAtiva.dias} de {escalaAtiva.mes}
@@ -557,7 +557,7 @@ export const LimpezaView: React.FC = () => {
                     </div>
                     <div>
                       <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Grupo Designado:
+                        Grupo Encarregado:
                       </span>
                       <span className="text-lg font-black text-emerald-700 dark:text-emerald-400">
                         {escalaAtiva.grupo}
@@ -626,7 +626,7 @@ export const LimpezaView: React.FC = () => {
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* CONTEÚDO DA ABA 2: COMPOSIÇÃO DOS GRUPOS                      */}
+      {/* CONTEÚDO DA ABA 2: INTERVALO DE DATAS DE CADA GRUPO           */}
       {/* ------------------------------------------------------------- */}
       {abaAtiva === 'grupos' && (
         <div className="space-y-6">
@@ -636,7 +636,7 @@ export const LimpezaView: React.FC = () => {
               type="text"
               value={buscaIrmao}
               onChange={(e) => setBuscaIrmao(e.target.value)}
-              placeholder="Localizar irmão para ver a qual grupo pertence..."
+              placeholder="Filtrar por grupo ou data..."
               className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
             {buscaIrmao && (
@@ -650,57 +650,101 @@ export const LimpezaView: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {grupos.map((g) => {
-              const membrosFiltrados = buscaIrmao.trim()
-                ? g.membros.filter((m) => m.toLowerCase().includes(buscaIrmao.toLowerCase()))
-                : g.membros;
-              const temIrmaoBuscado = buscaIrmao.trim() && membrosFiltrados.length > 0;
+              const nomeG = g.nomeGrupo || g.nome;
+              const numeroGrupo = nomeG.match(/\d+/)?.[0] || '';
+              const escalasDoGrupo = escalasOrdenadas.filter((item) => {
+                if (numeroGrupo) {
+                  return (
+                    item.grupo.toLowerCase().includes(`grupo ${numeroGrupo}`) ||
+                    item.grupo.toLowerCase().includes(`g${numeroGrupo}`) ||
+                    item.grupo.toLowerCase() === `grupo ${numeroGrupo}`
+                  );
+                }
+                return item.grupo.toLowerCase().includes(nomeG.toLowerCase());
+              });
+
+              const atendeBusca = !buscaIrmao.trim() || 
+                nomeG.toLowerCase().includes(buscaIrmao.toLowerCase()) ||
+                escalasDoGrupo.some((item) => 
+                  item.dias.toLowerCase().includes(buscaIrmao.toLowerCase()) || 
+                  item.mes.toLowerCase().includes(buscaIrmao.toLowerCase()) ||
+                  item.responsaveis.toLowerCase().includes(buscaIrmao.toLowerCase())
+                );
+
+              if (!atendeBusca) return null;
 
               return (
                 <div
                   key={g.id}
-                  className={`rounded-2xl border bg-white p-5 shadow-xs dark:bg-slate-900 transition-all ${
-                    temIrmaoBuscado
-                      ? 'border-emerald-500 ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 dark:border-slate-800'
-                  }`}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between"
                 >
-                  <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
-                    <div className="flex items-center justify-between">
-                      <span className="rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-black uppercase text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                        {g.nomeGrupo || g.nome}
-                      </span>
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        {g.membros.length} membros
-                      </span>
+                  <div>
+                    <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-black uppercase text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          {nomeG}
+                        </span>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                          {escalasDoGrupo.length} {escalasDoGrupo.length === 1 ? 'escala' : 'escalas'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">Dirigente(s): </span>
+                        {g.superintendentes}
+                      </p>
                     </div>
-                    <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                      <span className="font-bold text-slate-800 dark:text-slate-200">Dirigente(s): </span>
-                      {g.superintendentes}
-                    </p>
-                  </div>
 
-                  <ul className="mt-3 divide-y divide-slate-100 text-xs dark:divide-slate-800/60 max-h-96 overflow-y-auto pr-1">
-                    {membrosFiltrados.map((membro, idx) => (
-                      <li
-                        key={idx}
-                        className={`py-1.5 flex items-center gap-2 ${
-                          buscaIrmao.trim() && membro.toLowerCase().includes(buscaIrmao.toLowerCase())
-                            ? 'font-bold text-emerald-700 dark:text-emerald-400'
-                            : 'text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                        <span>{membro}</span>
-                      </li>
-                    ))}
-                    {membrosFiltrados.length === 0 && (
-                      <li className="py-2 text-center text-slate-400 italic">
-                        Nenhum membro encontrado neste grupo.
-                      </li>
-                    )}
-                  </ul>
+                    <div className="mt-3">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
+                        Intervalos de Datas Encarregadas:
+                      </span>
+                      {escalasDoGrupo.length > 0 ? (
+                        <div className="space-y-2">
+                          {escalasDoGrupo.map((item) => {
+                            const isProxima = proximoIndex !== -1 && item.id === escalasOrdenadas[proximoIndex]?.id;
+                            return (
+                              <div
+                                key={item.id}
+                                className={`rounded-xl p-2.5 border text-xs transition-colors ${
+                                  isProxima
+                                    ? 'bg-emerald-50/80 border-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800'
+                                    : 'bg-slate-50 border-slate-200 dark:bg-slate-800/60 dark:border-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                                    <Calendar className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                    <span>
+                                      {item.dias} de {item.mes}
+                                    </span>
+                                  </div>
+                                  {isProxima && (
+                                    <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-extrabold uppercase text-white">
+                                      Próxima
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
+                                  <span>{item.diasSemana}</span>
+                                  {item.responsaveis && (
+                                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                      Resp: {item.responsaveis}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs italic text-slate-400 py-2">
+                          Nenhum intervalo cadastrado para este grupo no trimestre.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               );
             })}

@@ -15,18 +15,29 @@ import {
 } from './s140tStorage';
 import {
   Territorio,
+  SolicitacaoTerritorio,
+  TransferenciaTerritorio,
+  HistoricoTerritorio,
   STORAGE_KEY_TERRITORIOS,
+  STORAGE_KEY_SOLICITACOES,
+  STORAGE_KEY_TRANSFERENCIAS,
+  STORAGE_KEY_HISTORICO,
   getStoredTerritorios,
+  isAdminAuthenticated,
 } from './territoriosStorage';
 import { STORAGE_KEY_DESIGNACOES } from './designacoesStorage';
 import { STORAGE_KEY_CAMPO_FDS, STORAGE_KEY_CAMPO_PROGRAMACAO } from './campoStorage';
 import { STORAGE_KEY_DISCURSOS } from './discursoStorage';
 import { STORAGE_KEY_LIMPEZA_ESCALAS } from './limpezaStorage';
+import { dispatchPushNotificationToResponsaveis } from '../lib/pushNotificationService';
 
 // Coleções do Firestore
 export const COLLECTIONS = {
   S140T: 'semanas_s140t',
   TERRITORIOS: 'territorios',
+  SOLICITACOES: 'solicitacoes_territorios',
+  TRANSFERENCIAS: 'transferencias_territorios',
+  HISTORICO: 'historico_territorios',
   DESIGNACOES: 'designacoes_reuniao',
   DISCURSOS: 'discursos_publicos',
   CAMPO: 'servico_campo',
@@ -105,6 +116,9 @@ class FirebaseSyncManager {
     try {
       this.syncS140T();
       this.syncTerritorios();
+      this.syncSolicitacoes();
+      this.syncTransferencias();
+      this.syncHistorico();
       this.syncGenericCollection(COLLECTIONS.DESIGNACOES, STORAGE_KEY_DESIGNACOES, 'designacoes-firebase-updated');
       this.syncGenericCollection(COLLECTIONS.DISCURSOS, STORAGE_KEY_DISCURSOS, 'discursos-firebase-updated');
       this.syncGenericCollection(COLLECTIONS.CAMPO, STORAGE_KEY_CAMPO_FDS, 'campo-firebase-updated');
@@ -309,6 +323,200 @@ class FirebaseSyncManager {
       this.setStatus('connected');
     } catch (err) {
       console.warn('Erro ao salvar lote de territórios:', err);
+    }
+  }
+
+  // ==========================================
+  // Solicitações de Território em Tempo Real
+  // ==========================================
+  private syncSolicitacoes() {
+    const colRef = collection(db, COLLECTIONS.SOLICITACOES);
+    let initialLoadDone = false;
+
+    const unsub = onSnapshot(
+      colRef,
+      async (snapshot) => {
+        if (!snapshot.metadata.fromCache) {
+          this.setStatus('connected');
+        }
+
+        if (snapshot.empty) {
+          if (snapshot.metadata.fromCache) {
+            return;
+          }
+          const localRaw = localStorage.getItem(STORAGE_KEY_SOLICITACOES);
+          if (localRaw) {
+            try {
+              const dados: SolicitacaoTerritorio[] = JSON.parse(localRaw);
+              if (Array.isArray(dados) && dados.length > 0) {
+                const batch = writeBatch(db);
+                for (const s of dados) {
+                  const docRef = doc(db, COLLECTIONS.SOLICITACOES, s.id);
+                  batch.set(docRef, s);
+                }
+                await batch.commit();
+              }
+            } catch {
+              // ignore
+            }
+          }
+          initialLoadDone = true;
+          return;
+        }
+
+        const lista: SolicitacaoTerritorio[] = [];
+        snapshot.forEach((docSnap) => {
+          lista.push(docSnap.data() as SolicitacaoTerritorio);
+        });
+
+        lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        // Se após a carga inicial houver nova solicitação Pendente criada e este aparelho for do responsável
+        if (initialLoadDone) {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const novaSol = change.doc.data() as SolicitacaoTerritorio;
+              if (novaSol.status === 'Pendente') {
+                this.notifyLocalResponsibleIfActive(novaSol);
+              }
+            }
+          });
+        }
+        initialLoadDone = true;
+
+        localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(lista));
+        window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: lista }));
+      },
+      (error) => {
+        console.warn('Falha no listener Firestore Solicitações:', error);
+        this.setStatus('offline');
+      }
+    );
+
+    this.unsubscribers.push(unsub);
+  }
+
+  private notifyLocalResponsibleIfActive(sol: SolicitacaoTerritorio) {
+    if (!isAdminAuthenticated()) return;
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const title = 'Nova solicitação de território';
+        const options: NotificationOptions = {
+          body: `${sol.nome_publicador} solicitou um território.`,
+          icon: '/pwa-192x192.png',
+          badge: '/pwa-192x192.png',
+          tag: `solicitacao-${sol.id}`,
+        };
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(title, {
+              ...options,
+              data: { url: '/?screen=territorios&tab=solicitacoes' },
+            });
+          }).catch(() => {
+            new Notification(title, options);
+          });
+        } else {
+          new Notification(title, options);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public async saveSolicitacao(sol: SolicitacaoTerritorio, dispararPush = true): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.SOLICITACOES, sol.id);
+      await setDoc(docRef, sol);
+      this.setStatus('connected');
+
+      // Disparar push notification aos responsáveis se for solicitação nova pendente
+      if (dispararPush && sol.status === 'Pendente') {
+        dispatchPushNotificationToResponsaveis(sol).catch((err) => {
+          console.warn('Erro ao despachar push para responsáveis:', err);
+        });
+      }
+    } catch (err) {
+      console.warn('Erro ao salvar solicitação no Firestore:', err);
+    }
+  }
+
+  public async deleteSolicitacao(id: string): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.SOLICITACOES, id);
+      await deleteDoc(docRef);
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn('Erro ao excluir solicitação no Firestore:', err);
+    }
+  }
+
+  // ==========================================
+  // Transferências de Território em Tempo Real
+  // ==========================================
+  private syncTransferencias() {
+    const colRef = collection(db, COLLECTIONS.TRANSFERENCIAS);
+    const unsub = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const lista: TransferenciaTerritorio[] = [];
+        snapshot.forEach((d) => lista.push(d.data() as TransferenciaTerritorio));
+        lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(lista));
+        window.dispatchEvent(new CustomEvent('transferencias-firebase-updated', { detail: lista }));
+      },
+      (error) => console.warn('Falha no listener Transferências:', error)
+    );
+    this.unsubscribers.push(unsub);
+  }
+
+  public async saveTransferencia(tr: TransferenciaTerritorio): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.TRANSFERENCIAS, tr.id);
+      await setDoc(docRef, tr);
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn('Erro ao salvar transferência no Firestore:', err);
+    }
+  }
+
+  public async deleteTransferencia(id: string): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.TRANSFERENCIAS, id);
+      await deleteDoc(docRef);
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn('Erro ao excluir transferência no Firestore:', err);
+    }
+  }
+
+  // ==========================================
+  // Histórico de Territórios em Tempo Real
+  // ==========================================
+  private syncHistorico() {
+    const colRef = collection(db, COLLECTIONS.HISTORICO);
+    const unsub = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const lista: HistoricoTerritorio[] = [];
+        snapshot.forEach((d) => lista.push(d.data() as HistoricoTerritorio));
+        lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(lista));
+        window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: lista }));
+      },
+      (error) => console.warn('Falha no listener Histórico:', error)
+    );
+    this.unsubscribers.push(unsub);
+  }
+
+  public async saveHistorico(h: HistoricoTerritorio): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.HISTORICO, h.id);
+      await setDoc(docRef, h);
+      this.setStatus('connected');
+    } catch (err) {
+      console.warn('Erro ao salvar histórico no Firestore:', err);
     }
   }
 
