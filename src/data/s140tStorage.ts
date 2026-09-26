@@ -432,6 +432,51 @@ export function resetS140TToSample(): S140TSemana[] {
   return S140T_DADOS_PADRAO;
 }
 
+/**
+ * Retorna o ID da semana correspondente à programação atual (ou próxima mais relevante)
+ * com base na data de hoje.
+ * 1. Procura primeiro a semana cujo intervalo [segunda-feira 00:00 até domingo 23:59]
+ *    engloba a data de hoje.
+ * 2. Se nenhuma semana englobar a data de hoje diretamente (ex: virada de mês ou novos cadastros),
+ *    procura a primeira semana futura mais próxima.
+ * 3. Se todas as semanas forem anteriores ao dia de hoje, retorna a semana mais recente cadastrada.
+ */
+export function getSemanaAtualId(semanas: S140TSemana[]): string | null {
+  if (!semanas || semanas.length === 0) return null;
+
+  const agora = new Date();
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const hojeTime = hoje.getTime();
+
+  // 1. Procurar semana cujo período semanal [segunda-feira 00:00 até domingo 23:59] engloba a data de hoje
+  for (const s of semanas) {
+    if (s.dataReferencia && /^\d{4}-\d{2}-\d{2}$/.test(s.dataReferencia)) {
+      const [ano, mes, dia] = s.dataReferencia.split('-').map(Number);
+      const inicio = new Date(ano, mes - 1, dia, 0, 0, 0);
+      const fim = new Date(ano, mes - 1, dia + 6, 23, 59, 59, 999);
+      if (hojeTime >= inicio.getTime() && hojeTime <= fim.getTime()) {
+        return s.id;
+      }
+    }
+  }
+
+  // 2. Se não encontrou intervalo exato englobando hoje, buscar a primeira semana futura (mais próxima)
+  const ordenadas = [...semanas].sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
+  const futuras = ordenadas.filter((s) => {
+    if (!s.dataReferencia || !/^\d{4}-\d{2}-\d{2}$/.test(s.dataReferencia)) return false;
+    const [ano, mes, dia] = s.dataReferencia.split('-').map(Number);
+    const inicio = new Date(ano, mes - 1, dia, 0, 0, 0);
+    return inicio.getTime() >= hojeTime;
+  });
+
+  if (futuras.length > 0) {
+    return futuras[0].id;
+  }
+
+  // 3. Se todas estiverem no passado, retorna a mais recente cadastrada
+  return ordenadas[ordenadas.length - 1].id;
+}
+
 // Extrai todos os nomes únicos de publicadores/irmãos presentes nas designações
 export function extrairTodosNomesDesignados(semanas: S140TSemana[]): string[] {
   const nomesSet = new Set<string>();
