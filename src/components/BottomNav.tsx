@@ -19,13 +19,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <nav
       id="mobile-bottom-nav"
       aria-label="Navegação móvel"
-      className="fixed bottom-0 left-0 right-0 z-30 flex h-16 items-center justify-around border-t border-slate-200 bg-white/95 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 lg:hidden"
+      className="fixed bottom-0 left-0 right-0 z-30 flex h-14 sm:h-16 items-center justify-around border-t border-slate-200 bg-white/95 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 lg:hidden shadow-xs"
     >
       <button
         id="bottom-nav-inicio"
         type="button"
         onClick={() => onSelectScreen('inicio')}
-        className={`flex flex-1 items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${
+        className={`flex flex-1 items-center justify-center gap-2 py-2 rounded-xl transition-colors ${
           currentScreen === 'inicio' && !isDrawerOpen
             ? 'text-amber-700 dark:text-amber-400 font-black bg-amber-50 dark:bg-amber-950/40'
             : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white font-bold'
@@ -41,7 +41,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         id="bottom-nav-menu"
         type="button"
         onClick={onOpenDrawer}
-        className={`flex flex-1 items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${
+        className={`flex flex-1 items-center justify-center gap-2 py-2 rounded-xl transition-colors ${
           isDrawerOpen
             ? 'text-amber-700 dark:text-amber-400 font-black bg-amber-50 dark:bg-amber-950/40'
             : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white font-bold'

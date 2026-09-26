@@ -127,7 +127,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   const [showOpcoesAvancadas, setShowOpcoesAvancadas] = useState<boolean>(false);
 
   // Opção para registros existentes (Substituição / Adição)
-  const [modoSubstituicao, setModoSubstituicao] = useState<'substituir_tudo' | 'substituir_meses' | 'apenas_novos'>('substituir_tudo');
+  const [modoSubstituicao, setModoSubstituicao] = useState<'substituir_tudo' | 'substituir_meses' | 'apenas_novos'>('apenas_novos');
 
   // Estado de gravação
   const [isGravando, setIsGravando] = useState<boolean>(false);
@@ -1245,21 +1245,22 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     <p className="font-bold text-slate-700 dark:text-slate-300">
                       Tratamento de dados existentes:
                     </p>
-                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
+
+                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20">
                       <input
                         type="radio"
                         name="substituicao"
-                        value="substituir_tudo"
-                        checked={modoSubstituicao === 'substituir_tudo'}
-                        onChange={() => setModoSubstituicao('substituir_tudo')}
-                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                        value="apenas_novos"
+                        checked={modoSubstituicao === 'apenas_novos'}
+                        onChange={() => setModoSubstituicao('apenas_novos')}
+                        className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                       />
                       <div>
                         <span className="font-bold text-slate-900 dark:text-white block">
-                          Substituir toda a programação anterior (Recomendado)
+                          Continuar programação: Preservar meses atuais e adicionar novos (Recomendado)
                         </span>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                          Descarta dados anteriores e resíduos de exemplo (como Abril), definindo exclusivamente o período desta planilha ({formatarMesesTexto(mesesSelecionados)}).
+                          Mantém todos os meses que já constam no sistema (ex: Setembro) e apenas acrescenta as novas semanas dos próximos meses na ordem cronológica.
                         </span>
                       </div>
                     </label>
@@ -1287,17 +1288,17 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                       <input
                         type="radio"
                         name="substituicao"
-                        value="apenas_novos"
-                        checked={modoSubstituicao === 'apenas_novos'}
-                        onChange={() => setModoSubstituicao('apenas_novos')}
+                        value="substituir_tudo"
+                        checked={modoSubstituicao === 'substituir_tudo'}
+                        onChange={() => setModoSubstituicao('substituir_tudo')}
                         className="mt-0.5 text-blue-600 focus:ring-blue-500"
                       />
                       <div>
                         <span className="font-bold text-slate-900 dark:text-white block">
-                          Adicionar mantendo as existentes (apenas novos registros)
+                          Substituir toda a programação anterior
                         </span>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                          Acrescenta sem substituir registros existentes.
+                          Descarta dados anteriores e define exclusivamente o período desta planilha ({formatarMesesTexto(mesesSelecionados)}).
                         </span>
                       </div>
                     </label>

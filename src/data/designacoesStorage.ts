@@ -135,17 +135,9 @@ export const ESCALA_DESIGNACOES_CANONICA: EscalaDesignacaoItem[] = [
   { id: 'dez-9', mes: 'Dezembro 2026', mesChave: 'dezembro', dia: 'Quinta-Feira 31/12', indicador: 'Vanderlei / Leandro', microfone: 'Silvani / Rafael', leitor: '', audio: 'Kleber', video: 'Marcelo' },
 ];
 
-export const CANONICAL_DESIGNACOES_SAMPLE_IDS = new Set(
-  ESCALA_DESIGNACOES_CANONICA.map((i) => i.id)
-);
-
 export function isCanonicalSampleDesignacao(item: EscalaDesignacaoItem): boolean {
   if (!item) return false;
-  if (CANONICAL_DESIGNACOES_SAMPLE_IDS.has(item.id)) return true;
-  if (/^(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(item.id)) return true;
-  if (item.mesChave === 'abril' && (item.indicador?.includes('Pedro / Fernando') || item.microfone?.includes('Vanderlei / Vilson'))) {
-    return true;
-  }
+  if (item.id?.startsWith('abr-') && item.mesChave === 'abril') return true;
   return false;
 }
 
@@ -158,15 +150,8 @@ export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Se já existem registros reais importados pelo usuário, remove resíduos do template de exemplo
-      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleDesignacao(i));
-      if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !isCanonicalSampleDesignacao(i));
-        if (limpos.length > 0) {
-          return limpos;
-        }
-      }
-      return parsed;
+      const semLegados = parsed.filter((i) => !isCanonicalSampleDesignacao(i));
+      return semLegados.length > 0 ? semLegados : ESCALA_DESIGNACOES_CANONICA;
     }
     return ESCALA_DESIGNACOES_CANONICA;
   } catch {
@@ -211,12 +196,11 @@ export async function deleteStoredEscalaItem(id: string): Promise<{ success: boo
 
 export async function saveBulkEscalaDesignacoes(
   newItems: EscalaDesignacaoItem[],
-  mode: 'append' | 'replace_month' | 'replace_all',
+  mode: 'append' | 'replace_month' | 'replace_all' = 'append',
   targetMonthKey?: string | string[]
 ): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string; count?: number }> {
   try {
     const current = getStoredEscalaDesignacoes();
-    // Ao importar dados reais, descarta dados de exemplo antigos do template
     const cleanedCurrent = current.filter((item) => !isCanonicalSampleDesignacao(item));
     let updated: EscalaDesignacaoItem[];
 
@@ -227,15 +211,11 @@ export async function saveBulkEscalaDesignacoes(
       const filtered = cleanedCurrent.filter((item) => !keys.has(item.mesChave));
       updated = [...filtered, ...newItems];
     } else {
-      // Append / Mesclar: evitar duplicados pelo ID se já existirem
-      const existingIds = new Set(cleanedCurrent.map((i) => i.id));
-      const filteredNew = newItems.map((item) => {
-        if (existingIds.has(item.id)) {
-          return { ...item, id: `desig-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` };
-        }
-        return item;
-      });
-      updated = [...cleanedCurrent, ...filteredNew];
+      // Append / Mesclar: MANTÉM todos os meses atuais e adiciona novos
+      const map = new Map<string, EscalaDesignacaoItem>();
+      cleanedCurrent.forEach((i) => map.set(i.id || `${i.mesChave}-${i.dia}`, i));
+      newItems.forEach((i) => map.set(i.id || `${i.mesChave}-${i.dia}`, i));
+      updated = Array.from(map.values());
     }
 
     // Salva localmente e emite evento imediato para a UI

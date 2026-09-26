@@ -128,6 +128,15 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
     return solicitacoes.filter((s) => s.status === 'Pendente');
   }, [solicitacoes]);
 
+  // Solicitações ordenadas: Pendentes no topo, seguidas pelas mais recentes
+  const solicitacoesOrdenadas = useMemo(() => {
+    return [...solicitacoes].sort((a, b) => {
+      if (a.status === 'Pendente' && b.status !== 'Pendente') return -1;
+      if (a.status !== 'Pendente' && b.status === 'Pendente') return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [solicitacoes]);
+
   // Contadores para os badges das abas
   const pendentesSolicitacoesCount = useMemo(() => {
     return pendentesSolicitacoes.length;
@@ -600,13 +609,22 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    solicitacoes.map((sol) => (
+                    solicitacoesOrdenadas.map((sol) => (
                       <tr key={sol.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                         <td className="px-4 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
                           {sol.data_solicitacao} às {sol.hora_solicitacao}
                         </td>
                         <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                          {sol.nome_publicador}
+                          <div>{sol.nome_publicador}</div>
+                          {sol.territorio_numero ? (
+                            <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                              Preferência: Território Nº {sol.territorio_numero}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] font-normal text-slate-400 dark:text-slate-500 italic">
+                              Qualquer território disponível
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {sol.status === 'Pendente' ? (
@@ -614,9 +632,13 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                               Pendente
                             </span>
-                          ) : (
+                          ) : sol.status === 'Designado' ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:border-blue-900 dark:text-blue-300">
-                              Designado (Nº {sol.territorio_numero})
+                              Designado (Nº {sol.territorio_numero || '-'})
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                              Cancelada
                             </span>
                           )}
                         </td>
@@ -642,9 +664,13 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                                 CANCELAR
                               </button>
                             </div>
+                          ) : sol.status === 'Designado' ? (
+                            <span className="text-slate-400 text-xs italic">
+                              Atendido em {sol.data_designacao || sol.data_solicitacao}
+                            </span>
                           ) : (
                             <span className="text-slate-400 text-xs italic">
-                              Atendido em {sol.data_designacao}
+                              Cancelada
                             </span>
                           )}
                         </td>
@@ -1211,7 +1237,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                 <button
                   id="btn-confirmar-designacao-final"
                   type="submit"
-                  disabled={territoriosDisponiveis.length === 0 || !selectedTerritorioIdParaDesignar}
+                  disabled={territoriosParaDesignar.length === 0 || !selectedTerritorioIdParaDesignar}
                   className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />

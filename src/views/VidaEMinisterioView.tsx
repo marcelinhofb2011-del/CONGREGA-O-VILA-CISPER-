@@ -31,13 +31,16 @@ import {
   Eye,
   EyeOff,
   FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
+import { ImportarVidaMinisterioPdfModal } from '../components/ImportarVidaMinisterioPdfModal';
 
 export const VidaEMinisterioView: React.FC = () => {
   const [semanas, setSemanas] = useState<S140TSemana[]>([]);
   const [semanaIdAtiva, setSemanaIdAtiva] = useState<string>('');
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
   // Autenticação do Irmão Responsável
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -223,13 +226,23 @@ export const VidaEMinisterioView: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  id="btn-importar-pdf-vida-ministerio"
+                  onClick={() => setIsPdfModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-600 bg-red-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-red-700 transition"
+                  title="Importar documento PDF oficial da programação (S-140-T)"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>IMPORTAR PDF</span>
+                </button>
+                <button
+                  type="button"
                   id="btn-importar-planilha-vida-ministerio"
                   onClick={() => setIsImportModalOpen(true)}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
-                  title="Importar planilha trimestral de Vida e Ministério"
+                  title="Importar planilha de Vida e Ministério"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
-                  <span>IMPORTAR PLANILHA</span>
+                  <span>PLANILHA</span>
                 </button>
                 <button
                   type="button"
@@ -690,6 +703,27 @@ export const VidaEMinisterioView: React.FC = () => {
         semana={semanaParaEditar}
         onClose={() => setIsEditorOpen(false)}
         onSave={handleSalvarSemana}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL DE IMPORTAÇÃO DE DOCUMENTO PDF OFICIAL (S-140-T)       */}
+      {/* ------------------------------------------------------------- */}
+      <ImportarVidaMinisterioPdfModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        onSucesso={(count) => {
+          const lista = getStoredS140TSemanas();
+          setSemanas(lista);
+          if (lista.length > 0) {
+            // Define a visualização na última semana adicionada ou primeira
+            setSemanaIdAtiva(lista[lista.length - 1].id);
+          }
+          setFeedback({
+            tipo: 'sucesso',
+            texto: `${count} semanas importadas do PDF com sucesso! Meses anteriores mantidos em perfeita continuidade.`,
+          });
+          setTimeout(() => setFeedback(null), 4500);
+        }}
       />
 
       {/* ------------------------------------------------------------- */}

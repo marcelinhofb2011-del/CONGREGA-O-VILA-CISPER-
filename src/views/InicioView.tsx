@@ -10,6 +10,10 @@ import {
   AlertTriangle,
   Clock,
   Calendar,
+  LayoutGrid,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { ScreenId } from '../types';
 import {
@@ -70,6 +74,98 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
   const [horariosConfig, setHorariosConfig] = useState<HorariosReunioesConfig>(() =>
     getHorariosReunioes()
   );
+  const [layoutAcesso, setLayoutAcesso] = useState<'carrossel' | 'grade'>(() => {
+    try {
+      return (localStorage.getItem('vila_cisper_layout_acesso') as 'carrossel' | 'grade') || 'carrossel';
+    } catch {
+      return 'carrossel';
+    }
+  });
+
+  const carouselRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const isPointerDownRef = React.useRef(false);
+  const startXRef = React.useRef(0);
+  const scrollLeftRef = React.useRef(0);
+  const hasMovedRef = React.useRef(false);
+
+  const updateScrollButtons = () => {
+    if (!carouselRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = carouselRef.current;
+    setCanScrollLeft(scrollLeft > 10);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  useEffect(() => {
+    updateScrollButtons();
+    const el = carouselRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateScrollButtons, { passive: true });
+    window.addEventListener('resize', updateScrollButtons);
+    return () => {
+      el.removeEventListener('scroll', updateScrollButtons);
+      window.removeEventListener('resize', updateScrollButtons);
+    };
+  }, [layoutAcesso]);
+
+  const scrollCards = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const scrollAmount = Math.max(160, Math.round(carouselRef.current.clientWidth * 0.7));
+      carouselRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!carouselRef.current) return;
+    isPointerDownRef.current = true;
+    hasMovedRef.current = false;
+    startXRef.current = e.pageX - carouselRef.current.offsetLeft;
+    scrollLeftRef.current = carouselRef.current.scrollLeft;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPointerDownRef.current || !carouselRef.current) return;
+    const x = e.pageX - carouselRef.current.offsetLeft;
+    const walk = x - startXRef.current;
+    if (Math.abs(walk) > 4) {
+      hasMovedRef.current = true;
+      carouselRef.current.scrollLeft = scrollLeftRef.current - walk;
+    }
+  };
+
+  const handlePointerUp = () => {
+    isPointerDownRef.current = false;
+    setTimeout(() => {
+      hasMovedRef.current = false;
+    }, 50);
+  };
+
+  const handlePointerLeave = () => {
+    isPointerDownRef.current = false;
+    setTimeout(() => {
+      hasMovedRef.current = false;
+    }, 50);
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!carouselRef.current) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && Math.abs(e.deltaY) > 10) {
+      carouselRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
+  const handleToggleLayout = (novoLayout: 'carrossel' | 'grade') => {
+    setLayoutAcesso(novoLayout);
+    try {
+      localStorage.setItem('vila_cisper_layout_acesso', novoLayout);
+    } catch {
+      // ignore
+    }
+  };
 
   // Carregar dados e sincronizar com eventos do storage/Firebase
   const carregarDados = () => {
@@ -338,7 +434,7 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 pb-16 pt-2">
+    <div className="mx-auto w-full max-w-2xl space-y-8 pb-4 pt-2">
       {/* ------------------------------------------------------------- */}
       {/* 1. CABEÇALHO                                                  */}
       {/* ------------------------------------------------------------- */}
@@ -453,31 +549,134 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
       {/* 4. ACESSOS PRINCIPAIS                                         */}
       {/* ------------------------------------------------------------- */}
       <section id="secao-acessos-principais" className="space-y-3">
-        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-          ACESSOS PRINCIPAIS
-        </h2>
-
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {botoesAcessoPrincipal.map((botao) => {
-            const Icon = botao.icon;
-            return (
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            ACESSOS PRINCIPAIS
+          </h2>
+          <div className="flex items-center gap-2">
+            {layoutAcesso === 'carrossel' && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => scrollCards('left')}
+                  disabled={!canScrollLeft}
+                  className="p-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all shadow-2xs"
+                  title="Rolar para esquerda"
+                  aria-label="Rolar para esquerda"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollCards('right')}
+                  disabled={!canScrollRight}
+                  className="p-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all shadow-2xs"
+                  title="Rolar para direita"
+                  aria-label="Rolar para direita"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200/80 dark:border-slate-700">
               <button
-                key={botao.id}
-                id={botao.id}
                 type="button"
-                onClick={() => onNavigate(botao.screen)}
-                className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-left shadow-2xs hover:border-slate-400 hover:bg-slate-50 active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-850"
+                onClick={() => handleToggleLayout('carrossel')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                  layoutAcesso === 'carrossel'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+                title="Carrossel deslizável"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                  <Icon className="h-4.5 w-4.5" />
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">
-                  {botao.label}
-                </span>
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Deslizar</span>
               </button>
-            );
-          })}
+              <button
+                type="button"
+                onClick={() => handleToggleLayout('grade')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+                  layoutAcesso === 'grade'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+                title="Visualização em grade"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Grade</span>
+              </button>
+            </div>
+          </div>
         </div>
+
+        {layoutAcesso === 'carrossel' ? (
+          <div
+            ref={carouselRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+            onWheel={handleWheel}
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              scrollBehavior: 'smooth',
+            }}
+            className="flex gap-3 overflow-x-auto pb-3 pt-1 -mx-4 px-4 sm:mx-0 sm:px-0 no-scrollbar touch-pan-x overscroll-x-contain select-none cursor-grab active:cursor-grabbing"
+          >
+            {botoesAcessoPrincipal.map((botao) => {
+              const Icon = botao.icon;
+              return (
+                <button
+                  key={botao.id}
+                  id={botao.id}
+                  type="button"
+                  onClick={(e) => {
+                    if (hasMovedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
+                    onNavigate(botao.screen);
+                  }}
+                  className="group flex h-[155px] w-[144px] min-w-[144px] sm:w-[154px] sm:min-w-[154px] shrink-0 flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-xs transition-all hover:border-blue-400 hover:shadow-md active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-600 select-none"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-400 dark:group-hover:bg-blue-900/60 pointer-events-none">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="mt-auto pointer-events-none">
+                    <span className="text-sm font-bold leading-snug text-slate-900 dark:text-white line-clamp-2">
+                      {botao.label}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {botoesAcessoPrincipal.map((botao) => {
+              const Icon = botao.icon;
+              return (
+                <button
+                  key={botao.id}
+                  id={botao.id}
+                  type="button"
+                  onClick={() => onNavigate(botao.screen)}
+                  className="group flex h-[148px] w-full flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-xs transition-all hover:border-blue-400 hover:shadow-md active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-600"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-400 dark:group-hover:bg-blue-900/60">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="mt-auto">
+                    <span className="text-sm font-bold leading-snug text-slate-900 dark:text-white line-clamp-2">
+                      {botao.label}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* ------------------------------------------------------------- */}

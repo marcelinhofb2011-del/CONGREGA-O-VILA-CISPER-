@@ -99,6 +99,14 @@ class FirebaseSyncManager {
   private historicoListeners: Array<(lista: HistoricoTerritorio[]) => void> = [];
 
   constructor() {
+    try {
+      this.territoriosCache = getStoredTerritorios();
+      this.solicitacoesCache = getStoredSolicitacoes();
+      this.transferenciasCache = getStoredTransferencias();
+      this.historicoCache = getStoredHistorico();
+    } catch {
+      // ignore
+    }
     this.init();
   }
 
@@ -120,7 +128,10 @@ class FirebaseSyncManager {
       callback(this.territoriosCache);
     } else {
       const stored = getStoredTerritorios();
-      if (stored.length > 0) callback(stored);
+      if (stored.length > 0) {
+        this.territoriosCache = stored;
+        callback(stored);
+      }
     }
     return () => {
       this.territoriosListeners = this.territoriosListeners.filter((cb) => cb !== callback);
@@ -133,7 +144,10 @@ class FirebaseSyncManager {
       callback(this.solicitacoesCache);
     } else {
       const stored = getStoredSolicitacoes();
-      if (stored.length > 0) callback(stored);
+      if (stored.length > 0) {
+        this.solicitacoesCache = stored;
+        callback(stored);
+      }
     }
     return () => {
       this.solicitacoesListeners = this.solicitacoesListeners.filter((cb) => cb !== callback);
@@ -372,12 +386,24 @@ class FirebaseSyncManager {
   }
 
   public async saveTerritorio(t: Territorio): Promise<void> {
+    const current = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+    const idx = current.findIndex((item) => item.id === t.id);
+    const updated = idx >= 0 ? current.map((item) => (item.id === t.id ? t : item)) : [...current, t];
+    this.territoriosCache = updated;
+    try {
+      localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
+    } catch {}
+    this.territoriosListeners.forEach((cb) => {
+      try { cb(updated); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: updated }));
+
     try {
       const docRef = doc(db, COLLECTIONS.TERRITORIOS, t.id);
       await setDoc(docRef, {
         ...t,
         updated_at: new Date().toISOString(),
-      });
+      }, { merge: true });
       this.setStatus('connected');
     } catch (err) {
       console.warn('Erro ao salvar território no Firestore:', err);
@@ -385,6 +411,17 @@ class FirebaseSyncManager {
   }
 
   public async deleteTerritorio(id: string): Promise<void> {
+    const current = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+    const updated = current.filter((t) => t.id !== id);
+    this.territoriosCache = updated;
+    try {
+      localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
+    } catch {}
+    this.territoriosListeners.forEach((cb) => {
+      try { cb(updated); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: updated }));
+
     try {
       const docRef = doc(db, COLLECTIONS.TERRITORIOS, id);
       await deleteDoc(docRef);
@@ -427,22 +464,38 @@ class FirebaseSyncManager {
             return;
           }
           const localRaw = localStorage.getItem(STORAGE_KEY_SOLICITACOES);
+          let localDados: SolicitacaoTerritorio[] = [];
           if (localRaw) {
             try {
-              const dados: SolicitacaoTerritorio[] = JSON.parse(localRaw);
-              if (Array.isArray(dados) && dados.length > 0) {
-                const batch = writeBatch(db);
-                for (const s of dados) {
-                  const docRef = doc(db, COLLECTIONS.SOLICITACOES, s.id);
-                  batch.set(docRef, s);
-                }
-                await batch.commit();
-              }
+              localDados = JSON.parse(localRaw);
             } catch {
               // ignore
             }
           }
+          if (Array.isArray(localDados) && localDados.length > 0) {
+            try {
+              const batch = writeBatch(db);
+              for (const s of localDados) {
+                const docRef = doc(db, COLLECTIONS.SOLICITACOES, s.id);
+                batch.set(docRef, s, { merge: true });
+              }
+              await batch.commit();
+            } catch (seedErr) {
+              console.warn('Erro ao sincronizar solicitações locais para o Firestore:', seedErr);
+            }
+            this.solicitacoesCache = localDados;
+          } else {
+            this.solicitacoesCache = [];
+          }
           initialLoadDone = true;
+          this.solicitacoesListeners.forEach((cb) => {
+            try {
+              cb(this.solicitacoesCache);
+            } catch (e) {
+              console.error('Erro no listener de solicitações:', e);
+            }
+          });
+          window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: this.solicitacoesCache }));
           return;
         }
 
@@ -632,7 +685,7 @@ class FirebaseSyncManager {
 
   /**
    * 1. Publicador solicita território:
-   * Cria a solicitação no Firestore.
+   * Cria a solicitação no Firestore e sincroniza localmente.
    * Se um território foi escolhido, atualiza o status dele para "Solicitado".
    * Registra a solicitação no histórico permanente.
    */
@@ -640,80 +693,129 @@ class FirebaseSyncManager {
     nomePublicador: string,
     territorioId?: string
   ): Promise<SolicitacaoTerritorio | null> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHoje = formatarDataHoje();
-      const horaHoje = formatarHoraHoje();
-      const solId = String(Date.now());
+    const nomeLimpo = nomePublicador.trim();
+    const now = new Date();
+    const dataHoje = formatarDataHoje();
+    const horaHoje = formatarHoraHoje();
+    const solId = String(Date.now());
 
-      let terObj: Territorio | undefined;
-      if (territorioId) {
-        terObj = this.territoriosCache.find((t) => t.id === territorioId);
-        if (!terObj) {
-          const stored = getStoredTerritorios();
-          terObj = stored.find((t) => t.id === territorioId);
-        }
+    let terObj: Territorio | undefined;
+    if (territorioId) {
+      terObj = this.territoriosCache.find((t) => t.id === territorioId);
+      if (!terObj) {
+        const stored = getStoredTerritorios();
+        terObj = stored.find((t) => t.id === territorioId);
       }
+    }
 
-      const nova: SolicitacaoTerritorio = {
-        id: solId,
-        nome_publicador: nomePublicador.trim(),
+    const nova: SolicitacaoTerritorio = {
+      id: solId,
+      nome_publicador: nomeLimpo,
+      data_solicitacao: dataHoje,
+      hora_solicitacao: horaHoje,
+      status: 'Pendente',
+      territorio_id: terObj ? terObj.id : undefined,
+      territorio_numero: terObj ? terObj.numero : undefined,
+      created_at: now.toISOString(),
+    };
+
+    // 1. Atualização Otimista Imediata de Solicitações
+    const currentSolList = this.solicitacoesCache.length > 0 ? this.solicitacoesCache : getStoredSolicitacoes();
+    const novaListaSol = [nova, ...currentSolList.filter((s) => s.id !== solId)];
+    this.solicitacoesCache = novaListaSol;
+    try {
+      localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(novaListaSol));
+    } catch (err) {
+      console.warn('Erro ao salvar solicitacao no localStorage:', err);
+    }
+    this.solicitacoesListeners.forEach((cb) => {
+      try { cb(novaListaSol); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: novaListaSol }));
+
+    // 2. Se um território foi selecionado, marca como Solicitado imediatamente
+    let terAtualizado: Territorio | undefined;
+    if (terObj) {
+      terAtualizado = {
+        ...terObj,
+        status: 'Solicitado',
+        solicitado_por: nomeLimpo,
+        solicitacao_id: solId,
         data_solicitacao: dataHoje,
         hora_solicitacao: horaHoje,
-        status: 'Pendente',
-        territorio_id: terObj ? terObj.id : undefined,
-        territorio_numero: terObj ? terObj.numero : undefined,
-        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
       };
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === terObj!.id ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorio no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
 
+    // 3. Atualização no Histórico
+    const histId = String(Date.now() + 1);
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: terObj?.id,
+      territorio_numero: terObj ? terObj.numero : 0,
+      territorio_localidade: terObj?.localidade,
+      publicador: nomeLimpo,
+      acao: 'Solicitação',
+      status: 'Solicitado',
+      responsavel: 'Publicador',
+      data: `${dataHoje} às ${horaHoje}`,
+      observacao: terObj
+        ? `Solicitação do Território Nº ${terObj.numero} (${terObj.localidade}) enviada ao responsável.`
+        : 'Solicitação de território enviada ao responsável.',
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 4. Gravação no Firestore com merge: true (nunca falha por doc inexistente)
+    try {
+      const batch = writeBatch(db);
       const solRef = doc(db, COLLECTIONS.SOLICITACOES, solId);
-      batch.set(solRef, nova);
+      batch.set(solRef, nova, { merge: true });
 
-      if (terObj) {
+      if (terObj && terAtualizado) {
         const terRef = doc(db, COLLECTIONS.TERRITORIOS, terObj.id);
-        batch.update(terRef, {
-          status: 'Solicitado',
-          solicitado_por: nomePublicador.trim(),
-          solicitacao_id: solId,
-          data_solicitacao: dataHoje,
-          hora_solicitacao: horaHoje,
-          updated_at: now.toISOString(),
-        });
+        batch.set(terRef, terAtualizado, { merge: true });
       }
 
-      const histId = String(Date.now() + 1);
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: terObj?.id,
-        territorio_numero: terObj ? terObj.numero : 0,
-        territorio_localidade: terObj?.localidade,
-        publicador: nomePublicador.trim(),
-        acao: 'Solicitação',
-        status: 'Solicitado',
-        responsavel: 'Publicador',
-        data: `${dataHoje} às ${horaHoje}`,
-        observacao: terObj
-          ? `Solicitação do Território Nº ${terObj.numero} (${terObj.localidade}) enviada ao responsável.`
-          : 'Solicitação de território enviada ao responsável.',
-        created_at: now.toISOString(),
-      };
-      batch.set(histRef, histItem);
+      batch.set(histRef, histItem, { merge: true });
 
       await batch.commit();
       this.setStatus('connected');
-
-      // Notifica responsáveis via push se habilitado
-      dispatchPushNotificationToResponsaveis(nova).catch((pushErr) => {
-        console.warn('Erro ao despachar push para responsáveis:', pushErr);
-      });
-
-      return nova;
-    } catch (err) {
-      console.error('Erro ao executar batch de solicitação no Firestore:', err);
-      return null;
+    } catch (firestoreErr) {
+      console.warn('Aviso: Gravação offline/pendente no Firestore para solicitação:', firestoreErr);
+      this.setStatus('offline');
     }
+
+    // 5. Notifica responsáveis via push se habilitado
+    dispatchPushNotificationToResponsaveis(nova).catch((pushErr) => {
+      console.warn('Erro ao despachar push para responsáveis:', pushErr);
+    });
+
+    return nova;
   }
 
   /**
@@ -728,26 +830,28 @@ class FirebaseSyncManager {
     responsavelNome: string,
     publicadorNomeOverride?: string
   ): Promise<boolean> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHoje = formatarDataHoje();
-      const horaHoje = formatarHoraHoje();
+    const now = new Date();
+    const dataHoje = formatarDataHoje();
+    const horaHoje = formatarHoraHoje();
 
-      const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
-        getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
-      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
-        getStoredTerritorios().find((t) => t.id === territorioId);
+    const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
+      getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
+    const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+      getStoredTerritorios().find((t) => t.id === territorioId);
 
-      const publicadorNome = (publicadorNomeOverride || sol?.nome_publicador || '').trim();
+    const publicadorNome = (publicadorNomeOverride || sol?.nome_publicador || '').trim();
+    const respLimpo = responsavelNome.trim() || 'Irmão Responsável';
 
-      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-      batch.update(terRef, {
+    // 1. Atualizar Território
+    let terAtualizado: Territorio | undefined;
+    if (ter) {
+      terAtualizado = {
+        ...ter,
         status: 'Designado',
         designado_para: publicadorNome,
         data_ultima_designacao: dataHoje,
         hora_ultima_designacao: horaHoje,
-        responsavel_designacao: responsavelNome.trim(),
+        responsavel_designacao: respLimpo,
         solicitado_por: null,
         solicitacao_id: null,
         data_conclusao: null,
@@ -755,43 +859,101 @@ class FirebaseSyncManager {
         motivo_estorno: null,
         data_ultimo_retorno_sort: null,
         updated_at: now.toISOString(),
-      });
-
-      if (solicitacaoId) {
-        const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
-        batch.update(solRef, {
-          status: 'Designado',
-          territorio_id: territorioId,
-          territorio_numero: ter ? ter.numero : 0,
-          data_designacao: dataHoje,
-          responsavel: responsavelNome.trim(),
-        });
-      }
-
-      const histId = String(Date.now());
-      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: publicadorNome,
-        acao: 'Designação',
-        status: 'Designado',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data: `${dataHoje} às ${horaHoje}`,
-        observacao: `Designado para ${publicadorNome}`,
-        created_at: now.toISOString(),
       };
-      batch.set(histRef, histItem);
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === territorioId ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorios no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
+
+    // 2. Atualizar Solicitação (marca como Designado)
+    let solAtualizada: SolicitacaoTerritorio | undefined;
+    if (solicitacaoId) {
+      const currentSolList = this.solicitacoesCache.length > 0 ? this.solicitacoesCache : getStoredSolicitacoes();
+      const novaListaSol = currentSolList.map((s) => {
+        if (s.id === solicitacaoId) {
+          solAtualizada = {
+            ...s,
+            status: 'Designado',
+            territorio_id: territorioId,
+            territorio_numero: ter ? ter.numero : 0,
+            data_designacao: dataHoje,
+            responsavel: respLimpo,
+          };
+          return solAtualizada;
+        }
+        return s;
+      });
+      this.solicitacoesCache = novaListaSol;
+      try {
+        localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(novaListaSol));
+      } catch (err) {
+        console.warn('Erro ao salvar solicitacoes no localStorage:', err);
+      }
+      this.solicitacoesListeners.forEach((cb) => {
+        try { cb(novaListaSol); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: novaListaSol }));
+    }
+
+    // 3. Atualizar Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: publicadorNome,
+      acao: 'Designação',
+      status: 'Designado',
+      responsavel: respLimpo,
+      data: `${dataHoje} às ${horaHoje}`,
+      observacao: `Designado para ${publicadorNome}`,
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 4. Gravação no Firestore com merge: true
+    try {
+      const batch = writeBatch(db);
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+        batch.set(terRef, terAtualizado, { merge: true });
+      }
+      if (solAtualizada) {
+        const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
+        batch.set(solRef, solAtualizada, { merge: true });
+      }
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      batch.set(histRef, histItem, { merge: true });
 
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao executar batch de designação no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao gravar designação no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -800,23 +962,23 @@ class FirebaseSyncManager {
    * Remove o vínculo ativo com o publicador (designado_para = null).
    * Altera imediatamente o estado do território para "Disponível".
    * Registra no histórico permanente.
-   * Ambas as telas atualizam em tempo real via snapshot do Firestore.
    */
   public async executeEstornoBatch(
     territorioId: string,
     publicadorNome: string,
     motivo?: string
   ): Promise<boolean> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
 
-      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
-        getStoredTerritorios().find((t) => t.id === territorioId);
+    const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+      getStoredTerritorios().find((t) => t.id === territorioId);
 
-      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-      batch.update(terRef, {
+    // 1. Atualizar Território
+    let terAtualizado: Territorio | undefined;
+    if (ter) {
+      terAtualizado = {
+        ...ter,
         status: 'Disponível',
         designado_para: null,
         responsavel_designacao: null,
@@ -829,34 +991,68 @@ class FirebaseSyncManager {
         data_conclusao: null,
         data_ultimo_retorno_sort: null,
         updated_at: now.toISOString(),
-      });
-
-      const histId = String(Date.now());
-      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
-        acao: 'Estorno',
-        status: 'Disponível',
-        responsavel: 'Publicador',
-        data: dataHora,
-        observacao: motivo?.trim()
-          ? `Devolvido ao responsável. Motivo: ${motivo.trim()}`
-          : 'Devolvido ao responsável antes da conclusão.',
-        created_at: now.toISOString(),
       };
-      batch.set(histRef, histItem);
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === territorioId ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorios no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
 
+    // 2. Atualizar Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
+      acao: 'Estorno',
+      status: 'Disponível',
+      responsavel: 'Publicador',
+      data: dataHora,
+      observacao: motivo?.trim()
+        ? `Devolvido ao responsável. Motivo: ${motivo.trim()}`
+        : 'Devolvido ao responsável antes da conclusão.',
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
+    try {
+      const batch = writeBatch(db);
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+        batch.set(terRef, terAtualizado, { merge: true });
+      }
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao executar batch de estorno no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao gravar estorno no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -868,53 +1064,88 @@ class FirebaseSyncManager {
     territorioId: string,
     publicadorNome: string
   ): Promise<boolean> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
 
-      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
-        getStoredTerritorios().find((t) => t.id === territorioId);
+    const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+      getStoredTerritorios().find((t) => t.id === territorioId);
 
-      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-      batch.update(terRef, {
+    // 1. Atualizar Território
+    let terAtualizado: Territorio | undefined;
+    if (ter) {
+      terAtualizado = {
+        ...ter,
         status: 'Concluído',
         data_conclusao: dataHora,
         data_ultimo_retorno_sort: now.toISOString(),
         solicitado_por: null,
         solicitacao_id: null,
         updated_at: now.toISOString(),
-      });
-
-      const histId = String(Date.now());
-      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
-        acao: 'Conclusão',
-        status: 'Concluído',
-        responsavel: 'Publicador',
-        data: dataHora,
-        observacao: 'Trabalho de pregação concluído pelo publicador. Aguarda decisão do responsável.',
-        created_at: now.toISOString(),
       };
-      batch.set(histRef, histItem);
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === territorioId ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorios no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
 
+    // 2. Atualizar Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: publicadorNome.trim() || ter?.designado_para || 'Publicador',
+      acao: 'Conclusão',
+      status: 'Concluído',
+      responsavel: 'Publicador',
+      data: dataHora,
+      observacao: 'Trabalho de pregação concluído pelo publicador. Aguarda decisão do responsável.',
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
+    try {
+      const batch = writeBatch(db);
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+        batch.set(terRef, terAtualizado, { merge: true });
+      }
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao executar batch de conclusão no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao gravar conclusão no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
    * 5. Responsável cancela solicitação:
-   * Marca solicitação como Cancelada (ou remove).
+   * Marca solicitação como Cancelada.
    * Se havia território vinculado ou solicitado, devolve o território para "Disponível".
    * Registra no histórico.
    */
@@ -922,63 +1153,118 @@ class FirebaseSyncManager {
     solicitacaoId: string,
     responsavelNome?: string
   ): Promise<boolean> {
+    const now = new Date();
+    const dataHoje = formatarDataHoje();
+    const horaHoje = formatarHoraHoje();
+    const respLimpo = responsavelNome?.trim() || 'Irmão Responsável';
+
+    const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
+      getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
+
+    // 1. Atualizar Solicitação para Cancelada
+    let solAtualizada: SolicitacaoTerritorio | undefined;
+    const currentSolList = this.solicitacoesCache.length > 0 ? this.solicitacoesCache : getStoredSolicitacoes();
+    const novaListaSol = currentSolList.map((s) => {
+      if (s.id === solicitacaoId) {
+        solAtualizada = { ...s, status: 'Cancelada' };
+        return solAtualizada;
+      }
+      return s;
+    });
+    this.solicitacoesCache = novaListaSol;
+    try {
+      localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(novaListaSol));
+    } catch (err) {
+      console.warn('Erro ao salvar solicitacoes no localStorage:', err);
+    }
+    this.solicitacoesListeners.forEach((cb) => {
+      try { cb(novaListaSol); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: novaListaSol }));
+
+    // 2. Se havia território vinculado à solicitação, restaura para Disponível
+    let ter: Territorio | undefined;
+    if (sol?.territorio_id) {
+      ter = this.territoriosCache.find((t) => t.id === sol.territorio_id);
+    }
+    if (!ter && sol) {
+      ter = this.territoriosCache.find(
+        (t) => t.solicitacao_id === solicitacaoId || (t.status === 'Solicitado' && t.solicitado_por === sol.nome_publicador)
+      );
+    }
+
+    let terAtualizado: Territorio | undefined;
+    if (ter) {
+      terAtualizado = {
+        ...ter,
+        status: 'Disponível',
+        solicitado_por: null,
+        solicitacao_id: null,
+        updated_at: now.toISOString(),
+      };
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === ter!.id ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorios no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
+
+    // 3. Atualizar Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: ter?.id,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: sol ? sol.nome_publicador : 'Publicador',
+      acao: 'Solicitação Cancelada',
+      status: 'Cancelada',
+      responsavel: respLimpo,
+      data: `${dataHoje} às ${horaHoje}`,
+      observacao: 'Solicitação cancelada. Território liberado para designação.',
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 4. Gravação no Firestore
     try {
       const batch = writeBatch(db);
-      const now = new Date();
-      const dataHoje = formatarDataHoje();
-      const horaHoje = formatarHoraHoje();
-
-      const sol = this.solicitacoesCache.find((s) => s.id === solicitacaoId) ||
-        getStoredSolicitacoes().find((s) => s.id === solicitacaoId);
-
-      const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
-      batch.update(solRef, { status: 'Cancelada' });
-
-      // Se havia território vinculado à solicitação, restaura para Disponível
-      let ter: Territorio | undefined;
-      if (sol?.territorio_id) {
-        ter = this.territoriosCache.find((t) => t.id === sol.territorio_id);
+      if (solAtualizada) {
+        const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
+        batch.set(solRef, solAtualizada, { merge: true });
       }
-      if (!ter && sol) {
-        ter = this.territoriosCache.find(
-          (t) => t.solicitacao_id === solicitacaoId || (t.status === 'Solicitado' && t.solicitado_por === sol.nome_publicador)
-        );
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, terAtualizado.id);
+        batch.set(terRef, terAtualizado, { merge: true });
       }
-
-      if (ter) {
-        const terRef = doc(db, COLLECTIONS.TERRITORIOS, ter.id);
-        batch.update(terRef, {
-          status: 'Disponível',
-          solicitado_por: null,
-          solicitacao_id: null,
-          updated_at: now.toISOString(),
-        });
-      }
-
-      const histId = String(Date.now());
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: ter?.id,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: sol ? sol.nome_publicador : 'Publicador',
-        acao: 'Solicitação Cancelada',
-        status: 'Cancelada',
-        responsavel: responsavelNome?.trim() || 'Irmão Responsável',
-        data: `${dataHoje} às ${horaHoje}`,
-        observacao: 'Solicitação cancelada pelo responsável. Território liberado.',
-        created_at: now.toISOString(),
-      };
-      batch.set(histRef, histItem);
-
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao executar cancelamento no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao gravar cancelamento no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -989,17 +1275,19 @@ class FirebaseSyncManager {
     territorioId: string,
     responsavelNome: string
   ): Promise<boolean> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
+    const respLimpo = responsavelNome.trim() || 'Irmão Responsável';
 
-      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
-        getStoredTerritorios().find((t) => t.id === territorioId);
-      const anteriorPublicador = ter?.designado_para;
+    const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+      getStoredTerritorios().find((t) => t.id === territorioId);
+    const anteriorPublicador = ter?.designado_para;
 
-      const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-      batch.update(terRef, {
+    // 1. Atualizar Território
+    let terAtualizado: Territorio | undefined;
+    if (ter) {
+      terAtualizado = {
+        ...ter,
         status: 'Disponível',
         designado_para: null,
         responsavel_designacao: null,
@@ -1012,32 +1300,66 @@ class FirebaseSyncManager {
         solicitacao_id: null,
         data_ultimo_retorno_sort: null,
         updated_at: now.toISOString(),
-      });
-
-      const histId = String(Date.now());
-      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: anteriorPublicador || '-',
-        acao: 'Disponibilizado para Novo Ciclo',
-        status: 'Disponível',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data: dataHora,
-        observacao: 'Território liberado manualmente pelo responsável para novas designações.',
-        created_at: now.toISOString(),
       };
-      batch.set(histRef, histItem);
+      const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+      const novaListaTer = currentTerList.map((t) => (t.id === territorioId ? terAtualizado! : t));
+      this.territoriosCache = novaListaTer;
+      try {
+        localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+      } catch (err) {
+        console.warn('Erro ao salvar territorios no localStorage:', err);
+      }
+      this.territoriosListeners.forEach((cb) => {
+        try { cb(novaListaTer); } catch (e) { console.error(e); }
+      });
+      window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+    }
 
+    // 2. Atualizar Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: anteriorPublicador || '-',
+      acao: 'Disponibilizado para Novo Ciclo',
+      status: 'Disponível',
+      responsavel: respLimpo,
+      data: dataHora,
+      observacao: 'Território liberado manualmente pelo responsável para novas designações.',
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
+    try {
+      const batch = writeBatch(db);
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
+        batch.set(terRef, terAtualizado, { merge: true });
+      }
+      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao disponibilizar território no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao disponibilizar território no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -1047,19 +1369,33 @@ class FirebaseSyncManager {
     territorioIds: string[],
     responsavelNome: string
   ): Promise<boolean> {
-    try {
-      const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
+    const respLimpo = responsavelNome.trim() || 'Irmão Responsável';
 
-      for (let i = 0; i < territorioIds.length; i++) {
-        const id = territorioIds[i];
-        const ter = this.territoriosCache.find((t) => t.id === id) ||
-          getStoredTerritorios().find((t) => t.id === id);
+    // 1. Atualizar Territórios localmente
+    const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+    const novosHistItens: HistoricoTerritorio[] = [];
+    const idSet = new Set(territorioIds);
 
-        const terRef = doc(db, COLLECTIONS.TERRITORIOS, id);
-        batch.update(terRef, {
+    const novaListaTer = currentTerList.map((ter, idx) => {
+      if (idSet.has(ter.id)) {
+        novosHistItens.push({
+          id: String(Date.now() + idx),
+          territorio_id: ter.id,
+          territorio_numero: ter.numero,
+          territorio_localidade: ter.localidade,
+          publicador: ter.designado_para || '-',
+          acao: 'Disponibilizado para Novo Ciclo',
           status: 'Disponível',
+          responsavel: respLimpo,
+          data: dataHora,
+          observacao: 'Território liberado em lote para novas designações.',
+          created_at: now.toISOString(),
+        });
+        return {
+          ...ter,
+          status: 'Disponível' as const,
           designado_para: null,
           responsavel_designacao: null,
           data_ultima_designacao: null,
@@ -1071,33 +1407,57 @@ class FirebaseSyncManager {
           solicitacao_id: null,
           data_ultimo_retorno_sort: null,
           updated_at: now.toISOString(),
-        });
-
-        const histId = String(Date.now() + i);
-        const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-        const histItem: HistoricoTerritorio = {
-          id: histId,
-          territorio_id: id,
-          territorio_numero: ter ? ter.numero : 0,
-          territorio_localidade: ter?.localidade,
-          publicador: ter?.designado_para || '-',
-          acao: 'Disponibilizado para Novo Ciclo',
-          status: 'Disponível',
-          responsavel: responsavelNome.trim() || 'Responsável',
-          data: dataHora,
-          observacao: 'Território liberado em lote para novas designações.',
-          created_at: now.toISOString(),
         };
-        batch.set(histRef, histItem);
       }
+      return ter;
+    });
 
+    this.territoriosCache = novaListaTer;
+    try {
+      localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+    } catch (err) {
+      console.warn('Erro ao salvar territorios no localStorage:', err);
+    }
+    this.territoriosListeners.forEach((cb) => {
+      try { cb(novaListaTer); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+
+    // 2. Atualizar Histórico localmente
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [...novosHistItens, ...currentHistList];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
+    try {
+      const batch = writeBatch(db);
+      for (const ter of novaListaTer) {
+        if (idSet.has(ter.id)) {
+          const terRef = doc(db, COLLECTIONS.TERRITORIOS, ter.id);
+          batch.set(terRef, ter, { merge: true });
+        }
+      }
+      for (const hist of novosHistItens) {
+        const histRef = doc(db, COLLECTIONS.HISTORICO, hist.id);
+        batch.set(histRef, hist, { merge: true });
+      }
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao disponibilizar lote no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao disponibilizar lote no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -1108,56 +1468,84 @@ class FirebaseSyncManager {
     publicadorAtual: string,
     novoPublicador: string
   ): Promise<TransferenciaTerritorio | null> {
+    const now = new Date();
+    const dataHoje = formatarDataHoje();
+    const horaHoje = formatarHoraHoje();
+    const transfId = String(Date.now());
+
+    const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
+      getStoredTerritorios().find((t) => t.id === territorioId);
+
+    const nova: TransferenciaTerritorio = {
+      id: transfId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador_atual: publicadorAtual.trim(),
+      novo_publicador: novoPublicador.trim(),
+      data_solicitacao: dataHoje,
+      hora_solicitacao: horaHoje,
+      status: 'Aguardando aprovação',
+      created_at: now.toISOString(),
+    };
+
+    // 1. Atualizar Transferências localmente
+    const currentTrList = this.transferenciasCache.length > 0 ? this.transferenciasCache : getStoredTransferencias();
+    const novaListaTr = [nova, ...currentTrList.filter((tr) => tr.id !== transfId)];
+    this.transferenciasCache = novaListaTr;
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(novaListaTr));
+    } catch (err) {
+      console.warn('Erro ao salvar transferencias no localStorage:', err);
+    }
+    this.transferenciasListeners.forEach((cb) => {
+      try { cb(novaListaTr); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('transferencias-firebase-updated', { detail: novaListaTr }));
+
+    // 2. Histórico
+    const histId = String(Date.now() + 1);
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: territorioId,
+      territorio_numero: ter ? ter.numero : 0,
+      territorio_localidade: ter?.localidade,
+      publicador: publicadorAtual.trim(),
+      acao: 'Compartilhamento Solicitado',
+      status: 'Aguardando aprovação',
+      responsavel: 'Publicador',
+      data: `${dataHoje} às ${horaHoje}`,
+      observacao: `Solicitada transferência para o irmão ${novoPublicador.trim()}`,
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
     try {
       const batch = writeBatch(db);
-      const now = new Date();
-      const dataHoje = formatarDataHoje();
-      const horaHoje = formatarHoraHoje();
-      const transfId = String(Date.now());
-
-      const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
-        getStoredTerritorios().find((t) => t.id === territorioId);
-
-      const nova: TransferenciaTerritorio = {
-        id: transfId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador_atual: publicadorAtual.trim(),
-        novo_publicador: novoPublicador.trim(),
-        data_solicitacao: dataHoje,
-        hora_solicitacao: horaHoje,
-        status: 'Aguardando aprovação',
-        created_at: now.toISOString(),
-      };
-
       const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transfId);
-      batch.set(transfRef, nova);
-
-      const histId = String(Date.now() + 1);
+      batch.set(transfRef, nova, { merge: true });
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: territorioId,
-        territorio_numero: ter ? ter.numero : 0,
-        territorio_localidade: ter?.localidade,
-        publicador: publicadorAtual.trim(),
-        acao: 'Compartilhamento Solicitado',
-        status: 'Aguardando aprovação',
-        responsavel: 'Publicador',
-        data: `${dataHoje} às ${horaHoje}`,
-        observacao: `Solicitada transferência para o irmão ${novoPublicador.trim()}`,
-        created_at: now.toISOString(),
-      };
-      batch.set(histRef, histItem);
-
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return nova;
     } catch (err) {
-      console.error('Erro ao solicitar transferência no Firestore:', err);
-      return null;
+      console.warn('Aviso: Falha ao solicitar transferência no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return nova;
   }
 
   /**
@@ -1167,58 +1555,120 @@ class FirebaseSyncManager {
     transferenciaId: string,
     responsavelNome: string
   ): Promise<boolean> {
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
+    const dataHoje = formatarDataHoje();
+    const horaHoje = formatarHoraHoje();
+    const respLimpo = responsavelNome.trim() || 'Irmão Responsável';
+
+    const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
+      getStoredTransferencias().find((t) => t.id === transferenciaId);
+    if (!transf) return false;
+
+    // 1. Atualizar Transferência localmente
+    let transfAtualizada: TransferenciaTerritorio | undefined;
+    const currentTrList = this.transferenciasCache.length > 0 ? this.transferenciasCache : getStoredTransferencias();
+    const novaListaTr = currentTrList.map((tr) => {
+      if (tr.id === transferenciaId) {
+        transfAtualizada = {
+          ...tr,
+          status: 'Aprovada',
+          responsavel: respLimpo,
+          data_decisao: dataHora,
+        };
+        return transfAtualizada;
+      }
+      return tr;
+    });
+    this.transferenciasCache = novaListaTr;
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(novaListaTr));
+    } catch (err) {
+      console.warn('Erro ao salvar transferencias no localStorage:', err);
+    }
+    this.transferenciasListeners.forEach((cb) => {
+      try { cb(novaListaTr); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('transferencias-firebase-updated', { detail: novaListaTr }));
+
+    // 2. Atualizar Território localmente
+    const currentTerList = this.territoriosCache.length > 0 ? this.territoriosCache : getStoredTerritorios();
+    let terAtualizado: Territorio | undefined;
+    const novaListaTer = currentTerList.map((t) => {
+      if (t.id === transf.territorio_id) {
+        terAtualizado = {
+          ...t,
+          status: 'Designado',
+          designado_para: transf.novo_publicador,
+          data_ultima_designacao: dataHoje,
+          hora_ultima_designacao: horaHoje,
+          responsavel_designacao: respLimpo,
+          updated_at: now.toISOString(),
+        };
+        return terAtualizado;
+      }
+      return t;
+    });
+    this.territoriosCache = novaListaTer;
+    try {
+      localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(novaListaTer));
+    } catch (err) {
+      console.warn('Erro ao salvar territorios no localStorage:', err);
+    }
+    this.territoriosListeners.forEach((cb) => {
+      try { cb(novaListaTer); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('territorios-firebase-updated', { detail: novaListaTer }));
+
+    // 3. Atualizar Histórico localmente
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: transf.territorio_id,
+      territorio_numero: transf.territorio_numero,
+      territorio_localidade: transf.territorio_localidade,
+      publicador: transf.novo_publicador,
+      acao: 'Transferência Aprovada',
+      status: 'Designado',
+      responsavel: respLimpo,
+      data: dataHora,
+      observacao: `Transferido de ${transf.publicador_atual} para ${transf.novo_publicador}`,
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 4. Gravação no Firestore
     try {
       const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
-      const dataHoje = formatarDataHoje();
-      const horaHoje = formatarHoraHoje();
-
-      const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
-        getStoredTransferencias().find((t) => t.id === transferenciaId);
-      if (!transf) return false;
-
-      const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
-      batch.update(transfRef, {
-        status: 'Aprovada',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data_decisao: dataHora,
-      });
-
-      const terRef = doc(db, COLLECTIONS.TERRITORIOS, transf.territorio_id);
-      batch.update(terRef, {
-        status: 'Designado',
-        designado_para: transf.novo_publicador,
-        data_ultima_designacao: dataHoje,
-        hora_ultima_designacao: horaHoje,
-        responsavel_designacao: responsavelNome.trim(),
-        updated_at: now.toISOString(),
-      });
-
-      const histId = String(Date.now());
+      if (transfAtualizada) {
+        const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
+        batch.set(transfRef, transfAtualizada, { merge: true });
+      }
+      if (terAtualizado) {
+        const terRef = doc(db, COLLECTIONS.TERRITORIOS, transf.territorio_id);
+        batch.set(terRef, terAtualizado, { merge: true });
+      }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: transf.territorio_id,
-        territorio_numero: transf.territorio_numero,
-        territorio_localidade: transf.territorio_localidade,
-        publicador: transf.novo_publicador,
-        acao: 'Transferência Aprovada',
-        status: 'Designado',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data: dataHora,
-        observacao: `Transferido de ${transf.publicador_atual} para ${transf.novo_publicador}`,
-        created_at: now.toISOString(),
-      };
-      batch.set(histRef, histItem);
-
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao aprovar transferência no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao aprovar transferência no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   /**
@@ -1228,46 +1678,85 @@ class FirebaseSyncManager {
     transferenciaId: string,
     responsavelNome: string
   ): Promise<boolean> {
+    const now = new Date();
+    const dataHora = formatarDataHoraHoje();
+    const respLimpo = responsavelNome.trim() || 'Irmão Responsável';
+
+    const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
+      getStoredTransferencias().find((t) => t.id === transferenciaId);
+    if (!transf) return false;
+
+    // 1. Atualizar Transferência localmente
+    let transfAtualizada: TransferenciaTerritorio | undefined;
+    const currentTrList = this.transferenciasCache.length > 0 ? this.transferenciasCache : getStoredTransferencias();
+    const novaListaTr = currentTrList.map((tr) => {
+      if (tr.id === transferenciaId) {
+        transfAtualizada = {
+          ...tr,
+          status: 'Recusada',
+          responsavel: respLimpo,
+          data_decisao: dataHora,
+        };
+        return transfAtualizada;
+      }
+      return tr;
+    });
+    this.transferenciasCache = novaListaTr;
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(novaListaTr));
+    } catch (err) {
+      console.warn('Erro ao salvar transferencias no localStorage:', err);
+    }
+    this.transferenciasListeners.forEach((cb) => {
+      try { cb(novaListaTr); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('transferencias-firebase-updated', { detail: novaListaTr }));
+
+    // 2. Histórico
+    const histId = String(Date.now());
+    const histItem: HistoricoTerritorio = {
+      id: histId,
+      territorio_id: transf.territorio_id,
+      territorio_numero: transf.territorio_numero,
+      territorio_localidade: transf.territorio_localidade,
+      publicador: transf.publicador_atual,
+      acao: 'Transferência Recusada',
+      status: 'Recusada',
+      responsavel: respLimpo,
+      data: dataHora,
+      observacao: `Pedido de transferência para ${transf.novo_publicador} foi recusado pelo responsável.`,
+      created_at: now.toISOString(),
+    };
+    const currentHistList = this.historicoCache.length > 0 ? this.historicoCache : getStoredHistorico();
+    const novaListaHist = [histItem, ...currentHistList.filter((h) => h.id !== histId)];
+    this.historicoCache = novaListaHist;
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(novaListaHist));
+    } catch (err) {
+      console.warn('Erro ao salvar historico no localStorage:', err);
+    }
+    this.historicoListeners.forEach((cb) => {
+      try { cb(novaListaHist); } catch (e) { console.error(e); }
+    });
+    window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
+
+    // 3. Gravação no Firestore
     try {
       const batch = writeBatch(db);
-      const now = new Date();
-      const dataHora = formatarDataHoraHoje();
-
-      const transf = this.transferenciasCache.find((t) => t.id === transferenciaId) ||
-        getStoredTransferencias().find((t) => t.id === transferenciaId);
-      if (!transf) return false;
-
-      const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
-      batch.update(transfRef, {
-        status: 'Recusada',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data_decisao: dataHora,
-      });
-
-      const histId = String(Date.now());
+      if (transfAtualizada) {
+        const transfRef = doc(db, COLLECTIONS.TRANSFERENCIAS, transferenciaId);
+        batch.set(transfRef, transfAtualizada, { merge: true });
+      }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      const histItem: HistoricoTerritorio = {
-        id: histId,
-        territorio_id: transf.territorio_id,
-        territorio_numero: transf.territorio_numero,
-        territorio_localidade: transf.territorio_localidade,
-        publicador: transf.publicador_atual,
-        acao: 'Transferência Recusada',
-        status: 'Recusada',
-        responsavel: responsavelNome.trim() || 'Responsável',
-        data: dataHora,
-        observacao: `Pedido de transferência para ${transf.novo_publicador} foi recusado pelo responsável.`,
-        created_at: now.toISOString(),
-      };
-      batch.set(histRef, histItem);
-
+      batch.set(histRef, histItem, { merge: true });
       await batch.commit();
       this.setStatus('connected');
-      return true;
     } catch (err) {
-      console.error('Erro ao recusar transferência no Firestore:', err);
-      return false;
+      console.warn('Aviso: Falha ao recusar transferência no Firestore:', err);
+      this.setStatus('offline');
     }
+
+    return true;
   }
 
   // ==========================================

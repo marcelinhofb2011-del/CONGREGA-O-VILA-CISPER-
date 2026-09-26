@@ -140,11 +140,11 @@ export default function App() {
           onSelectScreen={(screen) => setCurrentScreen(screen)}
         />
 
-        {/* Main Content Area - Mobile First, pb-32 for mobile bottom navigation clearance */}
+        {/* Main Content Area - Mobile First, pb-20 for standard bottom navigation clearance */}
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 pb-32 sm:pb-36 lg:pb-12 max-w-5xl mx-auto w-full"
+          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 pb-20 sm:pb-24 lg:pb-12 max-w-5xl mx-auto w-full"
         >
           {renderActiveScreen()}
         </main>

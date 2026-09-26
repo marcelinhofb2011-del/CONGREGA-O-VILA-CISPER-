@@ -55,3 +55,14 @@ html[data-text-size="lg"] {
   }
 }
 
+/* Utilitário para rolagem horizontal fluida e limpa sem barra visual */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+

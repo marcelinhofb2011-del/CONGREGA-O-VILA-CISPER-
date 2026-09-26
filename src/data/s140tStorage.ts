@@ -342,14 +342,9 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
   },
 ];
 
-export const CANONICAL_S140T_SAMPLE_IDS = new Set(
-  S140T_DADOS_PADRAO.map((i) => i.id)
-);
-
 export function isCanonicalSampleS140T(item: S140TSemana): boolean {
   if (!item) return false;
-  if (CANONICAL_S140T_SAMPLE_IDS.has(item.id)) return true;
-  if (item.id.startsWith('s140t-2026-04-')) return true;
+  if (item.id?.startsWith('s140t-2026-04-')) return true;
   return false;
 }
 
@@ -362,15 +357,10 @@ export function getStoredS140TSemanas(): S140TSemana[] {
       return S140T_DADOS_PADRAO;
     }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length > 0) {
-      const temRegistrosReais = parsed.some((i) => !isCanonicalSampleS140T(i));
-      if (temRegistrosReais) {
-        const limpos = parsed.filter((i) => !isCanonicalSampleS140T(i));
-        if (limpos.length > 0) {
-          return limpos;
-        }
-      }
-      return parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // Preserva todos os meses reais e atuais cadastrados
+      const semLegados = parsed.filter((i) => !isCanonicalSampleS140T(i));
+      return semLegados.length > 0 ? semLegados : S140T_DADOS_PADRAO;
     }
     return S140T_DADOS_PADRAO;
   } catch {
@@ -489,12 +479,12 @@ export function verificarDesignacaoIrmao(
 
 export async function saveBulkS140TSemanas(
   newWeeks: S140TSemana[],
-  mode: 'append' | 'replace_month' | 'replace_all',
+  mode: 'append' | 'replace_month' | 'replace_all' = 'append',
   targetMonthKeys?: string[]
 ): Promise<{ success: boolean; data?: S140TSemana[]; error?: string; count?: number }> {
   try {
     const current = getStoredS140TSemanas();
-    // Descarta dados de exemplo antigos do template ao importar dados reais
+    // Filtra apenas dados legados de teste, MANTENDO todos os meses reais já cadastrados
     const cleanedCurrent = current.filter((item) => !isCanonicalSampleS140T(item));
     let updated: S140TSemana[];
 
@@ -502,28 +492,28 @@ export async function saveBulkS140TSemanas(
       updated = [...newWeeks];
     } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
       const keysSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
-      // Filtra semanas que não pertencem aos meses que estão sendo substituídos
+      // Filtra semanas que pertencem aos meses que estão sendo substituídos especificamente
       const filtered = cleanedCurrent.filter((item) => {
         const itemPeriodo = (item.periodo || '').toLowerCase();
+        const itemDataRef = (item.dataReferencia || '').toLowerCase();
         return !Array.from(keysSet).some((key) => {
-          return itemPeriodo.includes(key);
+          return itemPeriodo.includes(key) || itemDataRef.includes(key);
         });
       });
-      updated = [...filtered, ...newWeeks];
+      const map = new Map<string, S140TSemana>();
+      filtered.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      updated = Array.from(map.values());
     } else {
-      // Append / Mesclar: evitar duplicados pelo ID ou dataReferencia
-      const existingRefDates = new Set(cleanedCurrent.map((w) => w.dataReferencia));
-      const filteredNew = newWeeks.map((item) => {
-        return item;
-      });
-      // Mescla atualizando as coincidentes e acrescentando as novas
+      // MODO PADRÃO: CONTINUAÇÃO ('append')
+      // Mantém todos os meses atuais intactos e acrescenta os novos meses/semanas
       const map = new Map<string, S140TSemana>();
       cleanedCurrent.forEach((w) => map.set(w.dataReferencia || w.id, w));
       newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
       updated = Array.from(map.values());
     }
 
-    // Ordenar cronologicamente
+    // Ordenar cronologicamente por data de referência (YYYY-MM-DD)
     updated.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
 
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));

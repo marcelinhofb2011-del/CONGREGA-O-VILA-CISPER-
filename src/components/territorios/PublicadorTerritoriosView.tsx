@@ -10,6 +10,7 @@ import {
   Clock,
   User,
   X,
+  XCircle,
   FileText,
 } from 'lucide-react';
 import {
@@ -19,6 +20,7 @@ import {
   getActivePublicador,
   setActivePublicador,
   createSolicitacao,
+  cancelarSolicitacaoTerritorio,
   concluirTerritorioPublicador,
   estornarTerritorioPublicador,
   solicitarCompartilhamento,
@@ -128,6 +130,16 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
     onDataChange();
   };
 
+  // Cancelar solicitação pendente do publicador
+  const handleCancelarMinhaSolicitacao = async () => {
+    if (!solicitacaoPendente) return;
+    const solId = solicitacaoPendente.id;
+    onNotification('Sua solicitação de território foi cancelada.');
+    await cancelarSolicitacaoTerritorio(solId, activePublicador);
+    setSolicitarFeedback('');
+    onDataChange();
+  };
+
   // Trocar / Identificar publicador ativo
   const handleSalvarPublicadorAtivo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,8 +221,72 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
             Solicite um território para realizar o trabalho de pregação.
           </p>
 
-          {/* Botão para abrir o formulário */}
-          {!isSolicitarOpen ? (
+          {/* Feedback de solicitação recém-enviada */}
+          {solicitarFeedback && (
+            <div className="mt-4 rounded-md bg-emerald-50 p-3 text-xs font-medium text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800/80 dark:text-emerald-300">
+              <div className="flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span>{solicitarFeedback}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Cartão de Solicitação Pendente Ativa para este Publicador */}
+          {solicitacaoPendente && !isSolicitarOpen && (
+            <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50/90 p-4 text-left shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                    <Clock className="h-5 w-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-200/70 px-2.5 py-0.5 text-[11px] font-bold text-amber-900 dark:bg-amber-900/80 dark:text-amber-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-600 animate-ping" />
+                        Aguardando Designação do Responsável
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+                      {solicitacaoPendente.territorio_numero
+                        ? `Território Nº ${solicitacaoPendente.territorio_numero}`
+                        : 'Qualquer território disponível'}
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Publicador: <strong>{solicitacaoPendente.nome_publicador}</strong> — Solicitado em {solicitacaoPendente.data_solicitacao} às {solicitacaoPendente.hora_solicitacao}.
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      Seu pedido está registrado e visível no painel do irmão responsável.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={handleCancelarMinhaSolicitacao}
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/60 transition-colors"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSolicitarOpen(true);
+                      if (activePublicador) {
+                        setNomePublicadorInput(activePublicador);
+                      }
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Nova Solicitação
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Botão para abrir o formulário quando não houver solicitação pendente ou quando recolhido */}
+          {!isSolicitarOpen && !solicitacaoPendente && (
             <div className="mt-5">
               <button
                 id="btn-solicitar-territorio"
@@ -227,7 +303,9 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
                 SOLICITAR TERRITÓRIO
               </button>
             </div>
-          ) : (
+          )}
+
+          {isSolicitarOpen && (
             <form onSubmit={handleSolicitarSubmit} className="mt-6 text-left border-t border-slate-100 pt-5 dark:border-slate-800">
               <div className="space-y-4">
                 <div>
@@ -298,28 +376,6 @@ export const PublicadorTerritoriosView: React.FC<PublicadorTerritoriosViewProps>
                 </div>
               </div>
             </form>
-          )}
-
-          {/* Feedback de solicitação enviada */}
-          {solicitarFeedback && (
-            <div className="mt-4 rounded-md bg-emerald-50 p-3 text-xs font-medium text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800/80 dark:text-emerald-300">
-              <div className="flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span>{solicitarFeedback}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Aviso de solicitação pendente para este publicador */}
-          {solicitacaoPendente && !solicitarFeedback && (
-            <div className="mt-4 rounded-md bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:border-amber-800/80 dark:text-amber-300">
-              <div className="flex items-center justify-center gap-1.5">
-                <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                <span>
-                  Você possui uma solicitação enviada em <strong>{solicitacaoPendente.data_solicitacao} às {solicitacaoPendente.hora_solicitacao}</strong> aguardando designação do responsável.
-                </span>
-              </div>
-            </div>
           )}
         </div>
 
