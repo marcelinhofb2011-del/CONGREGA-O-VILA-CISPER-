@@ -135,9 +135,15 @@ export const ESCALA_DESIGNACOES_CANONICA: EscalaDesignacaoItem[] = [
   { id: 'dez-9', mes: 'Dezembro 2026', mesChave: 'dezembro', dia: 'Quinta-Feira 31/12', indicador: 'Vanderlei / Leandro', microfone: 'Silvani / Rafael', leitor: '', audio: 'Kleber', video: 'Marcelo' },
 ];
 
+export const CANONICAL_DESIGNACOES_SAMPLE_IDS = new Set(
+  ESCALA_DESIGNACOES_CANONICA.map((i) => i.id)
+);
+
 export function isCanonicalSampleDesignacao(item: EscalaDesignacaoItem): boolean {
   if (!item) return false;
-  if (item.id?.startsWith('abr-') && item.mesChave === 'abril') return true;
+  if (item.mesChave === 'abril' && (item.indicador?.includes('Pedro / Fernando') || item.microfone?.includes('Vanderlei / Vilson'))) {
+    return true;
+  }
   return false;
 }
 
@@ -150,8 +156,7 @@ export function getStoredEscalaDesignacoes(): EscalaDesignacaoItem[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const semLegados = parsed.filter((i) => !isCanonicalSampleDesignacao(i));
-      return semLegados.length > 0 ? semLegados : ESCALA_DESIGNACOES_CANONICA;
+      return parsed;
     }
     return ESCALA_DESIGNACOES_CANONICA;
   } catch {
@@ -201,20 +206,29 @@ export async function saveBulkEscalaDesignacoes(
 ): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string; count?: number }> {
   try {
     const current = getStoredEscalaDesignacoes();
-    const cleanedCurrent = current.filter((item) => !isCanonicalSampleDesignacao(item));
     let updated: EscalaDesignacaoItem[];
 
     if (mode === 'replace_all') {
       updated = [...newItems];
     } else if (mode === 'replace_month' && targetMonthKey) {
-      const keys = Array.isArray(targetMonthKey) ? new Set(targetMonthKey) : new Set([targetMonthKey]);
-      const filtered = cleanedCurrent.filter((item) => !keys.has(item.mesChave));
+      const keys = Array.isArray(targetMonthKey)
+        ? new Set(targetMonthKey.map((k) => k.toLowerCase()))
+        : new Set([targetMonthKey.toLowerCase()]);
+      const filtered = current.filter((item) => !keys.has(item.mesChave.toLowerCase()));
       updated = [...filtered, ...newItems];
     } else {
-      // Append / Mesclar: MANTÉM todos os meses atuais e adiciona novos
+      // Modo Padrão: 'append' (Continuação da programação — preserva integralmente os meses atuais e anteriores)
       const map = new Map<string, EscalaDesignacaoItem>();
-      cleanedCurrent.forEach((i) => map.set(i.id || `${i.mesChave}-${i.dia}`, i));
-      newItems.forEach((i) => map.set(i.id || `${i.mesChave}-${i.dia}`, i));
+      // 1. Preserva todos os registros existentes
+      current.forEach((item) => {
+        const chave = `${item.mesChave}_${item.dia.toLowerCase().trim()}`;
+        map.set(chave, item);
+      });
+      // 2. Acrescenta ou atualiza com os novos registros
+      newItems.forEach((item) => {
+        const chave = `${item.mesChave}_${item.dia.toLowerCase().trim()}`;
+        map.set(chave, item);
+      });
       updated = Array.from(map.values());
     }
 

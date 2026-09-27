@@ -4,7 +4,12 @@ import { VidaEMinisterioView } from './VidaEMinisterioView';
 import { DiscursoPublicoView } from './DiscursoPublicoView';
 
 export const ProgramacaoGeralView: React.FC = () => {
-  const [reuniaoAtiva, setReuniaoAtiva] = useState<'vida-e-ministerio' | 'discurso-publico'>('vida-e-ministerio');
+  const [reuniaoAtiva, setReuniaoAtiva] = useState<'vida-e-ministerio' | 'discurso-publico'>(() => {
+    const dia = new Date().getDay();
+    // De sexta a domingo, a reunião mais próxima é a do fim de semana (Discurso e Sentinela)
+    // De segunda a quinta, a reunião mais próxima é a do meio de semana (Vida e Ministério)
+    return dia === 5 || dia === 6 || dia === 0 ? 'discurso-publico' : 'vida-e-ministerio';
+  });
 
   return (
     <div className="space-y-6">

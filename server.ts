@@ -15,15 +15,14 @@ const __dirname = path.dirname(__filename);
 // Configuração do Web Push com as credenciais VAPID
 webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-const ai = new GoogleGenAI();
-
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Permitir payloads de até 30MB para importação segura de arquivos PDF base64
+app.use(express.json({ limit: '30mb' }));
+app.use(express.urlencoded({ extended: true, limit: '30mb' }));
 
 // Armazenamento em memória para deduplicação de notificações recentes (evita duplicar alertas)
 const sentNotificationsCache = new Map<string, number>();
@@ -117,221 +116,276 @@ app.post('/api/notify-solicitacao', async (req, res) => {
   }
 });
 
-// Endpoint para interpretação inteligente de arquivo PDF de Vida e Ministério (S-140-T)
-app.post('/api/parse-s140t-pdf', async (req, res) => {
+// Endpoint para importação e leitura de programações congregacionais em formato PDF
+app.post('/api/parse-schedule-pdf', async (req, res) => {
   try {
-    const { pdfBase64, textContent, filename } = req.body;
-
-    if (!pdfBase64 && !textContent) {
-      return res.status(400).json({
-        success: false,
-        error: 'Nenhum documento PDF ou conteúdo de texto foi fornecido para interpretação.',
-      });
+    const { fileBase64, fileName, modulo } = req.body;
+    if (!fileBase64) {
+      return res.status(400).json({ success: false, error: 'Arquivo PDF não enviado.' });
     }
 
-    const systemPrompt = `Você é um assistente especialista em formulários congregacionais das Testemunhas de Jeová, especificamente a reunião "Nossa Vida e Ministério Cristão" (formulário S-140-T ou apostila mensal de congregação).
-Analise o arquivo PDF ou texto fornecido e extraia a programação semanal completa com todas as designações.
+    const cleanBase64 = fileBase64.includes('base64,')
+      ? fileBase64.split('base64,')[1]
+      : fileBase64;
 
-Retorne EXATAMENTE um array JSON com objetos seguindo a seguinte estrutura para cada semana:
-[
-  {
-    "id": "sem-AAAA-MM-DD",
-    "periodo": "D-D DE MÊS",
-    "dataReuniao": "Quarta-feira, DD de Mês",
-    "leituraBiblica": "LIVRO CAP-CAP",
-    "ehVisita": false,
-    "dataReferencia": "AAAA-MM-DD",
-    "presidente": "Nome do Irmão",
-    "canticoInicial": 1,
-    "oracaoInicial": "Nome do Irmão",
-    "comentariosIniciaisMin": 1,
-    "tesourosSalao": "Salão principal",
-    "discursoTesourosTitulo": "Tema do discurso de 10 min",
-    "discursoTesourosTempoMin": 10,
-    "discursoTesourosIrmao": "Nome do Irmão",
-    "joiasEspirituaisTitulo": "Encontre Joias Espirituais",
-    "joiasEspirituaisIrmao": "Nome do Irmão",
-    "joiasEspirituaisTempoMin": 10,
-    "leituraBibliaIrmao": "Nome do Irmão",
-    "leituraBibliaTempoMin": 4,
-    "ministerioSalao": "Salão principal",
-    "partesMinisterio": [
-      {
-        "id": "pm-1",
-        "numero": 4,
-        "titulo": "Iniciando conversas",
-        "tempoMin": 3,
-        "designado": "Nome do Estudante",
-        "ajudante": "Nome do Ajudante",
-        "salao": "Salão principal"
-      }
-    ],
-    "canticoMeio": 128,
-    "partesVidaCrista": [
-      {
-        "id": "pvc-1",
-        "numero": 7,
-        "titulo": "Tema da parte",
-        "tempoMin": 15,
-        "designado": "Nome do Irmão"
-      }
-    ],
-    "estudoBiblicoTempoMin": 30,
-    "estudoBiblicoDirigente": "Nome do Dirigente",
-    "estudoBiblicoLeitor": "Nome do Leitor",
-    "comentariosFinaisMin": 3,
-    "canticoFinal": 143,
-    "oracaoFinal": "Nome do Irmão",
-    "observacoesGerais": ""
-  }
-]
-
-Orientações cruciais:
-1. "dataReferencia" DEVE ser uma data válida no formato YYYY-MM-DD representando a segunda-feira da semana ou dia da reunião, permitindo ordenação cronológica.
-2. Não invente dados: se algum campo não estiver preenchido no PDF, deixe como string vazia "".
-3. Extraia todas as semanas presentes no documento.
-4. Responda SOMENTE o array JSON, sem markdown ou explicações adicionais.`;
-
-    let contentsParts: any[] = [];
-
-    if (pdfBase64) {
-      let rawBase64 = String(pdfBase64);
-      if (rawBase64.includes('base64,')) {
-        rawBase64 = rawBase64.split('base64,')[1];
-      }
-      contentsParts.push({
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: rawBase64,
-        },
-      });
-    }
-
-    if (textContent) {
-      contentsParts.push({
-        text: `Conteúdo de texto extraído do documento:\n${textContent}`,
-      });
-    }
-
-    contentsParts.push({
-      text: systemPrompt,
-    });
-
-    const modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
-    let response: any = null;
-    let lastError: any = null;
-
-    for (const modelName of modelsToTry) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: 'user',
-              parts: contentsParts,
-            },
-          ],
-          config: {
-            responseMimeType: 'application/json',
-          },
-        });
-        if (response && response.text) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`Tentativa com modelo ${modelName} falhou, tentando próximo...`, err?.message || err);
-      }
-    }
-
-    if (!response || !response.text) {
-      throw lastError || new Error('Não foi possível processar a programação.');
-    }
-
-    let rawText = response.text || '';
-    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-
-    let semanasParsed: any[] = [];
-    try {
-      const parsed = JSON.parse(rawText);
-      semanasParsed = Array.isArray(parsed) ? parsed : [parsed];
-    } catch (e: any) {
-      console.error('Falha ao fazer parse do JSON do Gemini:', rawText);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
       return res.status(500).json({
         success: false,
-        error: 'O modelo retornou uma estrutura de dados inválida. Tente novamente ou verifique o arquivo.',
-        raw: rawText.substring(0, 500),
+        error: 'Chave de processamento inteligente não configurada no servidor.',
       });
     }
 
-    // Normalização e higienização dos campos
-    const semanasLimpos = semanasParsed.map((sem: any, idx: number) => {
-      const dataRef = sem.dataReferencia || `2026-10-${String(idx * 7 + 5).padStart(2, '0')}`;
-      const id = sem.id || `sem-${dataRef}`;
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
 
-      return {
-        id,
-        periodo: sem.periodo || 'PERÍODO A DEFINIR',
-        dataReuniao: sem.dataReuniao || '',
-        leituraBiblica: sem.leituraBiblica || '',
-        ehVisita: Boolean(sem.ehVisita),
-        dataReferencia: dataRef,
-        presidente: sem.presidente || '',
-        canticoInicial: sem.canticoInicial || '',
-        oracaoInicial: sem.oracaoInicial || '',
-        comentariosIniciaisMin: sem.comentariosIniciaisMin || 1,
-        tesourosSalao: sem.tesourosSalao || 'Salão principal',
-        discursoTesourosTitulo: sem.discursoTesourosTitulo || '',
-        discursoTesourosTempoMin: sem.discursoTesourosTempoMin || 10,
-        discursoTesourosIrmao: sem.discursoTesourosIrmao || '',
-        joiasEspirituaisTitulo: sem.joiasEspirituaisTitulo || 'Encontre Joias Espirituais',
-        joiasEspirituaisIrmao: sem.joiasEspirituaisIrmao || '',
-        joiasEspirituaisTempoMin: sem.joiasEspirituaisTempoMin || 10,
-        leituraBibliaIrmao: sem.leituraBibliaIrmao || '',
-        leituraBibliaTempoMin: sem.leituraBibliaTempoMin || 4,
-        ministerioSalao: sem.ministerioSalao || 'Salão principal',
-        partesMinisterio: Array.isArray(sem.partesMinisterio)
-          ? sem.partesMinisterio.map((pm: any, pIdx: number) => ({
-              id: pm.id || `pm-${idx + 1}-${pIdx + 1}`,
-              numero: pm.numero || pIdx + 4,
-              titulo: pm.titulo || 'Parte do Ministério',
-              tempoMin: pm.tempoMin || 3,
-              designado: pm.designado || '',
-              ajudante: pm.ajudante || '',
-              salao: pm.salao || 'Salão principal',
-            }))
-          : [],
-        canticoMeio: sem.canticoMeio || '',
-        partesVidaCrista: Array.isArray(sem.partesVidaCrista)
-          ? sem.partesVidaCrista.map((pvc: any, pvcIdx: number) => ({
-              id: pvc.id || `pvc-${idx + 1}-${pvcIdx + 1}`,
-              numero: pvc.numero || 7,
-              titulo: pvc.titulo || 'Nossa Vida Cristã',
-              tempoMin: pvc.tempoMin || 15,
-              designado: pvc.designado || '',
-            }))
-          : [],
-        estudoBiblicoTempoMin: sem.estudoBiblicoTempoMin || 30,
-        estudoBiblicoDirigente: sem.estudoBiblicoDirigente || '',
-        estudoBiblicoLeitor: sem.estudoBiblicoLeitor || '',
-        comentariosFinaisMin: sem.comentariosFinaisMin || 3,
-        canticoFinal: sem.canticoFinal || '',
-        oracaoFinal: sem.oracaoFinal || '',
-        observacoesGerais: sem.observacoesGerais || '',
+    const pdfPart = {
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: cleanBase64,
+      },
+    };
+
+    // Helper resiliente com tentativas (retries) e fallback entre modelos para evitar erros temporários de sobrecarga (503)
+    async function executePromptWithFallback(prompt: string) {
+      // Prioriza gemini-3.1-flash-lite por sua altíssima velocidade e disponibilidade, com fallback para gemini-3.8-flash e gemini-flash-latest
+      const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+      let lastErr: any = null;
+      const totalAttempts = 6;
+
+      for (let attempt = 0; attempt < totalAttempts; attempt++) {
+        const model = candidateModels[attempt % candidateModels.length];
+        try {
+          console.log(`[parse-schedule-pdf] Processando documento com ${model} (tentativa ${attempt + 1}/${totalAttempts})...`);
+          const response = await ai.models.generateContent({
+            model,
+            contents: [pdfPart, { text: prompt }],
+            config: {
+              responseMimeType: 'application/json',
+            },
+          });
+
+          const jsonText = response.text || '{}';
+          let parsed: any;
+          try {
+            parsed = JSON.parse(jsonText);
+          } catch {
+            const cleaned = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+            const match = cleaned.match(/\{[\s\S]*\}/);
+            if (match) {
+              parsed = JSON.parse(match[0]);
+            } else {
+              throw new Error('Falha ao interpretar a estrutura JSON do documento.');
+            }
+          }
+          return parsed;
+        } catch (err: any) {
+          lastErr = err;
+          const statusOrCode = err?.status || err?.code || (err?.message?.includes('503') ? 503 : 'indisponivel');
+          console.log(`[parse-schedule-pdf] Resposta temporária com ${model} (${statusOrCode}). Alternando modelo...`);
+          if (attempt < totalAttempts - 1) {
+            const delay = Math.min(1000 * Math.pow(1.3, attempt) + Math.floor(Math.random() * 500), 3500);
+            await new Promise((r) => setTimeout(r, delay));
+          }
+        }
+      }
+
+      const errMsg = lastErr?.message || '';
+      if (
+        errMsg.includes('503') ||
+        errMsg.includes('overloaded') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('UNAVAILABLE')
+      ) {
+        throw new Error(
+          'Os servidores de inteligência artificial estão temporariamente com alta demanda no momento. Por favor, clique em "Tentar novamente" em instantes.'
+        );
+      }
+      throw lastErr || new Error('Falha ao processar o arquivo PDF com inteligência artificial.');
+    }
+
+    if (modulo === 'vida-ministerio') {
+      const promptText = `
+Você é um assistente especialista na leitura de documentos oficiais e formulários das Testemunhas de Jeová.
+O documento PDF anexado contém a programação da Reunião Nossa Vida e Ministério Cristão (Formulário S-140-T, Apostila da Reunião ou folha de designações mensais da congregação).
+
+Analise o PDF completo página por página e extraia detalhadamente todas as semanas de reunião nele contidas.
+Preste ATENÇÃO MÁXIMA na extração exata dos CÂNTICOS (inicial, do meio e final) e das ORAÇÕES (inicial e final), pois eles são fundamentais na reunião.
+
+Para CADA semana encontrada no PDF, extraia rigorosamente:
+- id: Uma chave única baseada na data de referência (ex: "sem-2026-10-05" ou similar)
+- periodo: Texto exato do período da semana (ex: "5-11 DE OUTUBRO", "12-18 DE OUTUBRO", etc.)
+- dataReferencia: Data de início da semana em formato ISO "YYYY-MM-DD" (ex: "2026-10-05")
+- dataReuniao: Data da reunião no meio de semana se informada (ex: "08/10/2026" ou "Quinta-feira, 8 de Outubro")
+- leituraBiblica: Texto da leitura bíblica semanal (ex: "JEREMIAS 38-39")
+- ehVisita: Booleano true apenas se for semana de visita do superintendente de circuito
+- presidente: Nome do irmão presidente da reunião (ex: "Marcelo F.")
+
+- canticoInicial: Número do CÂNTICO INICIAL da reunião (ex: 1, 74, 88). No PDF geralmente aparece como "Cântico 74 e oração", "Cântico inicial: 74", "Cântico: 74" ou "Cant. 74". Extraia apenas o número inteiro (ex: 74) ou texto limpo.
+- oracaoInicial: Nome exato do irmão designado para a ORAÇÃO INICIAL (ex: "Marcelo F."). Procure no cabeçalho da semana, na linha "Oração inicial", "Oração de abertura", ou na indicação ao lado do Presidente ou após "Cântico XX e oração: [Nome]". Se a escala indicar que o Presidente profere a oração inicial, extraia o nome do Presidente. NUNCA deixe em branco se houver qualquer irmão designado.
+- comentariosIniciaisMin: 1
+
+- tesourosSalao: "Salão principal"
+- discursoTesourosTitulo: Título do discurso de 10 minutos de Tesouros da Palavra de Deus
+- discursoTesourosIrmao: Nome do irmão designado para o discurso
+- discursoTesourosTempoMin: 10
+- joiasEspirituaisTitulo: Título da parte de Joias Espirituais (padrão: "Encontre joias espirituais")
+- joiasEspirituaisIrmao: Nome do irmão designado para as joias espirituais
+- joiasEspirituaisTempoMin: 10
+- leituraBibliaIrmao: Nome do estudante designado para a leitura da Bíblia
+- leituraBibliaTempoMin: 4
+
+- ministerioSalao: "Salão principal"
+- partesMinisterio: Array com as designações da seção 'Faça Seu Melhor no Ministério'. Para cada parte:
+  - id: Identificador único curto (ex: "pm-1", "pm-2")
+  - numero: Número da parte conforme na apostila (ex: 4, 5, 6, 7)
+  - titulo: Título da parte (ex: "Iniciando conversas", "Cultivando o interesse", "Fazendo discípulos", "Discurso")
+  - tempoMin: Minutos da parte (ex: 3, 4, 5, 6)
+  - designado: Nome do estudante titular
+  - ajudante: Nome do ajudante (ou string vazia se não houver ajudante)
+  - salao: "Salão principal"
+
+- canticoMeio: Número do CÂNTICO DO MEIO da reunião (ex: 128, 121, 62). Localizado entre o final de 'Faça Seu Melhor no Ministério' e o início de 'Nossa Vida Cristã'. Aparece como "Cântico 128", "Cântico do meio: 128", ou na primeira linha de Nossa Vida Cristã. Extraia apenas o número inteiro ou texto limpo.
+
+- partesVidaCrista: Array com as partes da seção 'Nossa Vida Cristã'. Para cada parte:
+  - id: Identificador único curto (ex: "pvc-1", "pvc-2")
+  - numero: Número da parte
+  - titulo: Título da parte
+  - tempoMin: Minutos da parte (ex: 15, 10)
+  - designado: Nome do irmão designado
+- estudoBiblicoTempoMin: 30
+- estudoBiblicoDirigente: Nome do irmão dirigente do Estudo Bíblico de Congregação
+- estudoBiblicoLeitor: Nome do irmão leitor do Estudo Bíblico de Congregação
+- comentariosFinaisMin: 3
+
+- canticoFinal: Número do CÂNTICO FINAL / de encerramento da reunião (ex: 143, 28, 150). Aparece no final do programa da semana após o Estudo Bíblico de Congregação, como "Cântico 143 e oração", "Cântico final: 143" ou "Cant. 143". Extraia apenas o número inteiro ou texto limpo.
+- oracaoFinal: Nome exato do irmão designado para a ORAÇÃO FINAL / de encerramento (ex: "Wilmar M.", "Pedro Mendes"). Procure na linha "Oração final", "Oração de encerramento", ou após "Cântico XX e oração: [Nome]". NUNCA deixe em branco se houver irmão designado.
+- observacoesGerais: Observações adicionais se houver
+
+Extraia também uma lista dos nomes dos meses identificados no documento (ex: ["Outubro 2026"]).
+Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguinte estrutura:
+{
+  "meses": ["Outubro 2026"],
+  "semanas": [
+    ...
+  ]
+}
+`;
+
+      const parsed = await executePromptWithFallback(promptText);
+
+      // Função auxiliar para limpar e extrair número puro de cântico
+      const cleanSongNum = (val: any): number | string => {
+        if (val === undefined || val === null) return '';
+        if (typeof val === 'number') return val;
+        const str = String(val).trim();
+        const match = str.match(/\b\d+\b/);
+        if (match) {
+          const n = parseInt(match[0], 10);
+          return isNaN(n) ? str : n;
+        }
+        return str;
       };
-    });
 
-    res.json({
-      success: true,
-      semanas: semanasLimpos,
-      count: semanasLimpos.length,
-      filename: filename || 'documento.pdf',
-    });
+      // Pós-processamento refinado para garantir que cânticos e orações não sejam perdidos
+      const rawSemanas = Array.isArray(parsed.semanas) ? parsed.semanas : [];
+      const semanasProcessadas = rawSemanas.map((sem: any) => {
+        let canticoIni = cleanSongNum(sem.canticoInicial);
+        let oracaoIni = (sem.oracaoInicial || '').trim();
+        let canticoMeio = cleanSongNum(sem.canticoMeio);
+        let canticoFim = cleanSongNum(sem.canticoFinal);
+        let oracaoFim = (sem.oracaoFinal || '').trim();
+
+        // Se o modelo incluiu a oração no campo de cântico inicial (ex: "Cântico 74 e oração: Carlos")
+        if (typeof sem.canticoInicial === 'string') {
+          const matchOracao = sem.canticoInicial.match(/ora[çc][ãa]o\s*[:\-]?\s*([^,\.\n]+)/i);
+          if (matchOracao && matchOracao[1] && !oracaoIni) {
+            oracaoIni = matchOracao[1].trim();
+          }
+        }
+
+        // Se o modelo incluiu a oração no campo de cântico final (ex: "Cântico 143 e oração: Wilmar M.")
+        if (typeof sem.canticoFinal === 'string') {
+          const matchOracao = sem.canticoFinal.match(/ora[çc][ãa]o\s*[:\-]?\s*([^,\.\n]+)/i);
+          if (matchOracao && matchOracao[1] && !oracaoFim) {
+            oracaoFim = matchOracao[1].trim();
+          }
+        }
+
+        // Caso a oração inicial esteja vazia mas o presidente estiver preenchido com anotação de oração
+        if (!oracaoIni && sem.presidente) {
+          if (/ora[çc][ãa]o/i.test(sem.presidente)) {
+            oracaoIni = sem.presidente.replace(/\s*\(.*?\)/g, '').trim();
+          }
+        }
+
+        return {
+          ...sem,
+          canticoInicial: canticoIni || sem.canticoInicial || '',
+          oracaoInicial: oracaoIni,
+          canticoMeio: canticoMeio || sem.canticoMeio || '',
+          canticoFinal: canticoFim || sem.canticoFinal || '',
+          oracaoFinal: oracaoFim,
+        };
+      });
+
+      return res.json({
+        success: true,
+        modulo: 'vida-ministerio',
+        meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
+        semanas: semanasProcessadas,
+      });
+    } else if (modulo === 'designacoes') {
+      const promptText = `
+Você é um assistente especialista na leitura de escalas de reuniões das Testemunhas de Jeová.
+O documento PDF anexado contém a escala de designações congregacionais (Indicadores, Microfones Volantes, Leitor, Som/Áudio e Vídeo, Presidência).
+
+Analise o PDF e extraia todas as reuniões e designações listadas:
+Para CADA reunião/data:
+- id: Identificador único curto (ex: "desig-out-1")
+- mes: Nome do mês e ano (ex: "Outubro 2026")
+- mesChave: Nome do mês em minúsculo sem acento (ex: "outubro")
+- dia: Texto de exibição do dia da reunião (ex: "Quinta-Feira 08/10", "Domingo 11/10")
+- indicador: Nomes dos irmãos indicadores (ex: "Danilo Cardoso / Hugo")
+- microfone: Nomes dos irmãos no microfone volante (ex: "Danilo Maia / Leandro")
+- leitor: Nome do irmão leitor (se constar, ou "")
+- audio: Nome do irmão responsável pelo áudio/som
+- video: Nome do irmão responsável pelo vídeo
+- presidencia: Nome do presidente da reunião (se constar na escala, ou "")
+- observacao: Observações (ex: "Assembleia", "Visita", etc., ou "")
+- ehEspecial: Booleano true se for assembleia, congresso ou reunião especial
+
+Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguinte estrutura:
+{
+  "meses": ["Outubro 2026"],
+  "escala": [
+    ...
+  ]
+}
+`;
+
+      const parsed = await executePromptWithFallback(promptText);
+
+      return res.json({
+        success: true,
+        modulo: 'designacoes',
+        meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
+        escala: Array.isArray(parsed.escala) ? parsed.escala : [],
+      });
+    } else {
+      return res.status(400).json({ success: false, error: 'Módulo de importação não suportado para PDF.' });
+    }
   } catch (err: any) {
-    console.error('Erro na extração do PDF de Vida e Ministério:', err);
-    res.status(500).json({
+    console.error('Erro no processamento do PDF:', err);
+    return res.status(500).json({
       success: false,
-      error: err?.message || 'Falha ao processar e interpretar o documento PDF.',
+      error: err?.message || 'Erro ao processar o arquivo PDF da programação.',
     });
   }
 });

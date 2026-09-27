@@ -3,6 +3,7 @@
 
 import { isAdminAuthenticated } from './territoriosStorage';
 import { firebaseSync } from './firebaseSyncService';
+import { parseItemDate, getMondayOfWeek, getSundayOfWeek } from '../utils/dateUtils';
 
 export interface S140TMinisterioParte {
   id: string;
@@ -342,10 +343,101 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
   },
 ];
 
+export const CANONICAL_S140T_SAMPLE_IDS = new Set(
+  S140T_DADOS_PADRAO.map((i) => i.id)
+);
+
 export function isCanonicalSampleS140T(item: S140TSemana): boolean {
   if (!item) return false;
-  if (item.id?.startsWith('s140t-2026-04-')) return true;
+  if (item.id.startsWith('s140t-2026-04-')) return true;
   return false;
+}
+
+export interface SemanaDateLimits {
+  inicio: Date;
+  reuniao: Date;
+  fim: Date;
+}
+
+export function parseSemanaDateLimits(semana: S140TSemana): SemanaDateLimits | null {
+  if (!semana) return null;
+
+  // 1. Tenta extrair da dataReferencia (ISO YYYY-MM-DD)
+  if (semana.dataReferencia && /^\d{4}-\d{2}-\d{2}$/.test(semana.dataReferencia.trim())) {
+    const [y, m, d] = semana.dataReferencia.trim().split('-').map(Number);
+    const inicio = new Date(y, m - 1, d, 0, 0, 0);
+
+    let reuniao: Date;
+    if (semana.dataReuniao) {
+      const parsedReuniao = parseItemDate(semana.dataReuniao);
+      reuniao = parsedReuniao || new Date(inicio.getTime() + 3 * 86400000);
+    } else {
+      reuniao = new Date(inicio.getTime() + 3 * 86400000); // Quinta-feira padrão
+    }
+    reuniao.setHours(23, 59, 59, 999);
+
+    const fim = new Date(inicio.getTime() + 6 * 86400000); // Domingo
+    fim.setHours(23, 59, 59, 999);
+
+    return { inicio, reuniao, fim };
+  }
+
+  // 2. Tenta extrair da dataReuniao ou periodo
+  const parsed = parseItemDate(semana.dataReuniao || '') || parseItemDate(semana.periodo || '');
+  if (parsed) {
+    const monday = getMondayOfWeek(parsed);
+    const sunday = getSundayOfWeek(monday);
+    const reuniao = new Date(parsed);
+    reuniao.setHours(23, 59, 59, 999);
+    return { inicio: monday, reuniao, fim: sunday };
+  }
+
+  return null;
+}
+
+export function ordenarSemanasCronologicamente(lista: S140TSemana[]): S140TSemana[] {
+  return [...lista].sort((a, b) => {
+    const limA = parseSemanaDateLimits(a);
+    const limB = parseSemanaDateLimits(b);
+    if (limA && limB) {
+      return limA.inicio.getTime() - limB.inicio.getTime();
+    }
+    if (limA) return -1;
+    if (limB) return 1;
+    return (a.dataReferencia || a.id).localeCompare(b.dataReferencia || b.id);
+  });
+}
+
+/**
+ * Identifica a próxima programação da semana mais próxima com base na data atual.
+ * 1. Procura a primeira semana cuja reunião ainda vai acontecer ou é hoje.
+ * 2. Se a reunião já ocorreu na semana corrente (ex: sexta ou sábado), aponta para a próxima semana.
+ * 3. Se todas já estiverem no passado, retorna a última (mais recente disponível).
+ * 4. Se todas estiverem no futuro, retorna a primeira.
+ */
+export function identificarSemanaMaisProxima(lista: S140TSemana[], dataBase: Date = new Date()): S140TSemana | null {
+  if (!lista || lista.length === 0) return null;
+  const ordenadas = ordenarSemanasCronologicamente(lista);
+  const hoje = new Date(dataBase);
+
+  // 1. Procura a primeira semana cuja reunião ainda não passou (reunião >= hoje)
+  for (const sem of ordenadas) {
+    const lim = parseSemanaDateLimits(sem);
+    if (lim && lim.reuniao.getTime() >= hoje.getTime()) {
+      return sem;
+    }
+  }
+
+  // 2. Se a reunião já passou mas hoje ainda está dentro da semana corrente (ex: fim de semana)
+  for (const sem of ordenadas) {
+    const lim = parseSemanaDateLimits(sem);
+    if (lim && lim.fim.getTime() >= hoje.getTime()) {
+      return sem;
+    }
+  }
+
+  // 3. Fallback: se todas já passaram em relação a hoje, exibe a mais recente cadastrada
+  return ordenadas[ordenadas.length - 1];
 }
 
 export function getStoredS140TSemanas(): S140TSemana[] {
@@ -354,17 +446,16 @@ export function getStoredS140TSemanas(): S140TSemana[] {
     if (!raw) {
       // Primeira inicialização: salvar os dados oficiais do documento
       localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(S140T_DADOS_PADRAO));
-      return S140T_DADOS_PADRAO;
+      return ordenarSemanasCronologicamente(S140T_DADOS_PADRAO);
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Preserva todos os meses reais e atuais cadastrados
-      const semLegados = parsed.filter((i) => !isCanonicalSampleS140T(i));
-      return semLegados.length > 0 ? semLegados : S140T_DADOS_PADRAO;
+      // Retorna a lista sempre organizada cronologicamente por data
+      return ordenarSemanasCronologicamente(parsed);
     }
-    return S140T_DADOS_PADRAO;
+    return ordenarSemanasCronologicamente(S140T_DADOS_PADRAO);
   } catch {
-    return S140T_DADOS_PADRAO;
+    return ordenarSemanasCronologicamente(S140T_DADOS_PADRAO);
   }
 }
 
@@ -432,51 +523,6 @@ export function resetS140TToSample(): S140TSemana[] {
   return S140T_DADOS_PADRAO;
 }
 
-/**
- * Retorna o ID da semana correspondente à programação atual (ou próxima mais relevante)
- * com base na data de hoje.
- * 1. Procura primeiro a semana cujo intervalo [segunda-feira 00:00 até domingo 23:59]
- *    engloba a data de hoje.
- * 2. Se nenhuma semana englobar a data de hoje diretamente (ex: virada de mês ou novos cadastros),
- *    procura a primeira semana futura mais próxima.
- * 3. Se todas as semanas forem anteriores ao dia de hoje, retorna a semana mais recente cadastrada.
- */
-export function getSemanaAtualId(semanas: S140TSemana[]): string | null {
-  if (!semanas || semanas.length === 0) return null;
-
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  const hojeTime = hoje.getTime();
-
-  // 1. Procurar semana cujo período semanal [segunda-feira 00:00 até domingo 23:59] engloba a data de hoje
-  for (const s of semanas) {
-    if (s.dataReferencia && /^\d{4}-\d{2}-\d{2}$/.test(s.dataReferencia)) {
-      const [ano, mes, dia] = s.dataReferencia.split('-').map(Number);
-      const inicio = new Date(ano, mes - 1, dia, 0, 0, 0);
-      const fim = new Date(ano, mes - 1, dia + 6, 23, 59, 59, 999);
-      if (hojeTime >= inicio.getTime() && hojeTime <= fim.getTime()) {
-        return s.id;
-      }
-    }
-  }
-
-  // 2. Se não encontrou intervalo exato englobando hoje, buscar a primeira semana futura (mais próxima)
-  const ordenadas = [...semanas].sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
-  const futuras = ordenadas.filter((s) => {
-    if (!s.dataReferencia || !/^\d{4}-\d{2}-\d{2}$/.test(s.dataReferencia)) return false;
-    const [ano, mes, dia] = s.dataReferencia.split('-').map(Number);
-    const inicio = new Date(ano, mes - 1, dia, 0, 0, 0);
-    return inicio.getTime() >= hojeTime;
-  });
-
-  if (futuras.length > 0) {
-    return futuras[0].id;
-  }
-
-  // 3. Se todas estiverem no passado, retorna a mais recente cadastrada
-  return ordenadas[ordenadas.length - 1].id;
-}
-
 // Extrai todos os nomes únicos de publicadores/irmãos presentes nas designações
 export function extrairTodosNomesDesignados(semanas: S140TSemana[]): string[] {
   const nomesSet = new Set<string>();
@@ -529,37 +575,37 @@ export async function saveBulkS140TSemanas(
 ): Promise<{ success: boolean; data?: S140TSemana[]; error?: string; count?: number }> {
   try {
     const current = getStoredS140TSemanas();
-    // Filtra apenas dados legados de teste, MANTENDO todos os meses reais já cadastrados
-    const cleanedCurrent = current.filter((item) => !isCanonicalSampleS140T(item));
     let updated: S140TSemana[];
 
     if (mode === 'replace_all') {
       updated = [...newWeeks];
     } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
       const keysSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
-      // Filtra semanas que pertencem aos meses que estão sendo substituídos especificamente
-      const filtered = cleanedCurrent.filter((item) => {
+      // Filtra semanas que não pertencem aos meses que estão sendo substituídos
+      const filtered = current.filter((item) => {
         const itemPeriodo = (item.periodo || '').toLowerCase();
-        const itemDataRef = (item.dataReferencia || '').toLowerCase();
-        return !Array.from(keysSet).some((key) => {
-          return itemPeriodo.includes(key) || itemDataRef.includes(key);
-        });
+        const itemRef = (item.dataReferencia || '').toLowerCase();
+        return !Array.from(keysSet).some((key) => itemPeriodo.includes(key) || itemRef.includes(key));
       });
-      const map = new Map<string, S140TSemana>();
-      filtered.forEach((w) => map.set(w.dataReferencia || w.id, w));
-      newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
-      updated = Array.from(map.values());
+      updated = [...filtered, ...newWeeks];
     } else {
-      // MODO PADRÃO: CONTINUAÇÃO ('append')
-      // Mantém todos os meses atuais intactos e acrescenta os novos meses/semanas
+      // Modo Padrão: 'append' (Continuação da programação — mantém todos os meses atuais e anteriores intactos)
       const map = new Map<string, S140TSemana>();
-      cleanedCurrent.forEach((w) => map.set(w.dataReferencia || w.id, w));
-      newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      // 1. Preserva integralmente todas as semanas que já existem no sistema
+      current.forEach((w) => {
+        const chave = w.dataReferencia || w.id;
+        map.set(chave, w);
+      });
+      // 2. Acrescenta ou atualiza com as novas semanas trazidas para os próximos meses
+      newWeeks.forEach((w) => {
+        const chave = w.dataReferencia || w.id;
+        map.set(chave, w);
+      });
       updated = Array.from(map.values());
     }
 
-    // Ordenar cronologicamente por data de referência (YYYY-MM-DD)
-    updated.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
+    // Ordenar cronologicamente por data
+    updated = ordenarSemanasCronologicamente(updated);
 
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));

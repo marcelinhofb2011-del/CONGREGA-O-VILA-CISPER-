@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
   FileSpreadsheet,
+  FileText,
   Upload,
   CheckCircle2,
   AlertTriangle,
@@ -114,9 +115,13 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   // Arquivo e Dados Brutos
   const [nomeArquivo, setNomeArquivo] = useState<string>('');
   const [linhasBrutas, setLinhasBrutas] = useState<string[][]>([]);
+  const [isPdf, setIsPdf] = useState<boolean>(false);
+  const [itensPdfExtraidos, setItensPdfExtraidos] = useState<any[]>([]);
   const [erroArquivo, setErroArquivo] = useState<string>('');
   const [isProcessandoArquivo, setIsProcessandoArquivo] = useState<boolean>(false);
+  const [mensagemProgresso, setMensagemProgresso] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const arquivoSelecionadoRef = useRef<File | null>(null);
 
   // Seleção dos Meses
   const [mesesDetectados, setMesesDetectados] = useState<string[]>([]);
@@ -126,7 +131,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   const [showProblemasModal, setShowProblemasModal] = useState<boolean>(false);
   const [showOpcoesAvancadas, setShowOpcoesAvancadas] = useState<boolean>(false);
 
-  // Opção para registros existentes (Substituição / Adição)
+  // Opção para registros existentes: por padrão 'apenas_novos' para CONTINUAR a programação sem apagar meses anteriores
   const [modoSubstituicao, setModoSubstituicao] = useState<'substituir_tudo' | 'substituir_meses' | 'apenas_novos'>('apenas_novos');
 
   // Estado de gravação
@@ -154,8 +159,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         };
       case 'vida-ministerio':
         return {
-          titulo: 'Vida e Ministério',
-          subtitulo: 'Programação semanal, Tesouros, Ministério e Vida Cristã',
+          titulo: 'Vida e Ministério (PDF)',
+          subtitulo: 'Importação automática via PDF oficial (Apostila / Formulário S-140-T)',
           cor: 'purple',
           icone: BookOpen,
           camposEsperados: ['Data', 'Presidente', 'Tesouros', 'Ministério', 'Vida Cristã'],
@@ -247,59 +252,145 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
     return null;
   };
 
-  // Processa arquivo selecionado
+  // Processa arquivo selecionado (PDF ou Planilha)
   const handleCarregarArquivo = async (file: File) => {
     try {
+      arquivoSelecionadoRef.current = file;
       setIsProcessandoArquivo(true);
       setErroArquivo('');
       setNomeArquivo(file.name);
 
-      const matrix = await readSpreadsheetFile(file);
-      if (!matrix || matrix.length === 0) {
-        setErroArquivo('A planilha está vazia ou não pôde ser lida.');
+      const isPdfFile =
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf');
+      setIsPdf(isPdfFile);
+
+      // Regra estrita: Vida e Ministério é EXCLUSIVAMENTE em formato PDF
+      if (modulo === 'vida-ministerio' && !isPdfFile) {
+        setErroArquivo(
+          'Para a programação de Vida e Ministério, a importação é feita exclusivamente por arquivo PDF oficial (Apostila da Reunião ou Formulário S-140-T). O modo planilha não é utilizado para esta tela.'
+        );
         setIsProcessandoArquivo(false);
         return;
       }
 
-      setLinhasBrutas(matrix);
+      if (isPdfFile) {
+        setMensagemProgresso('Lendo e interpretando a programação em PDF com Inteligência Artificial...');
 
-      // Detecta os meses presentes na planilha
-      const mesesEncontrados = new Set<string>();
-      let mesAtualContexto: string | null = null;
+        // 1. Converte o PDF para base64
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Falha ao ler o arquivo PDF no navegador.'));
+        });
+        reader.readAsDataURL(file);
+        const base64Data = await base64Promise;
 
-      for (const row of matrix) {
-        const linhaCompleta = row.join(' ');
-        const mesDetectado = detectarMesTexto(linhaCompleta);
-        if (mesDetectado) {
-          mesAtualContexto = mesDetectado;
-          mesesEncontrados.add(mesDetectado);
+        // 2. Chama a API do servidor com Gemini e sistema resiliente de fallback/retries
+        const resp = await fetch('/api/parse-schedule-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileBase64: base64Data,
+            fileName: file.name,
+            modulo,
+          }),
+        });
+
+        const data = await resp.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Não foi possível interpretar a programação do arquivo PDF.');
         }
+
+        const listaMeses: string[] =
+          Array.isArray(data.meses) && data.meses.length > 0
+            ? data.meses
+            : [detectarMesTexto(file.name) || MESES_NOMES[new Date().getMonth()]];
+
+        if (modulo === 'vida-ministerio') {
+          const semanasExtraidas: S140TSemana[] = data.semanas || [];
+          if (semanasExtraidas.length === 0) {
+            throw new Error(
+              'Nenhuma semana de reunião foi identificada no PDF. Verifique se o arquivo corresponde à apostila ou formulário S-140-T de Vida e Ministério.'
+            );
+          }
+          setItensPdfExtraidos(semanasExtraidas);
+        } else if (modulo === 'designacoes') {
+          const escalaExtraida: EscalaDesignacaoItem[] = data.escala || [];
+          if (escalaExtraida.length === 0) {
+            throw new Error(
+              'Nenhuma reunião ou designação foi identificada no PDF. Verifique se o arquivo é a escala de indicadores, microfones, som ou leitura.'
+            );
+          }
+          setItensPdfExtraidos(escalaExtraida);
+        }
+
+        setMesesDetectados(listaMeses);
+        setMesesSelecionados(listaMeses);
+        setLinhasBrutas([['PDF_PROCESSADO']]);
+        setPasso(1);
+      } else {
+        // Processamento de Planilhas (.xlsx, .xls, .csv) - Disponível para os demais módulos
+        setMensagemProgresso('Lendo planilha Excel / CSV...');
+        const matrix = await readSpreadsheetFile(file);
+        if (!matrix || matrix.length === 0) {
+          setErroArquivo('A planilha está vazia ou não pôde ser lida.');
+          setIsProcessandoArquivo(false);
+          return;
+        }
+
+        setItensPdfExtraidos([]);
+        setLinhasBrutas(matrix);
+
+        // Detecta os meses presentes na planilha
+        const mesesEncontrados = new Set<string>();
+        let mesAtualContexto: string | null = null;
+
+        for (const row of matrix) {
+          const linhaCompleta = row.join(' ');
+          const mesDetectado = detectarMesTexto(linhaCompleta);
+          if (mesDetectado) {
+            mesAtualContexto = mesDetectado;
+            mesesEncontrados.add(mesDetectado);
+          }
+        }
+
+        // Se nenhum mês foi detectado pelo texto, tenta o mês corrente e seguintes
+        if (mesesEncontrados.size === 0) {
+          const mesAtualIdx = new Date().getMonth();
+          mesesEncontrados.add(MESES_NOMES[mesAtualIdx]);
+        }
+
+        const listaMeses = Array.from(mesesEncontrados).sort((a, b) => {
+          return MESES_NOMES.indexOf(a) - MESES_NOMES.indexOf(b);
+        });
+
+        setMesesDetectados(listaMeses);
+        setMesesSelecionados(listaMeses); // Por padrão, seleciona todos os encontrados
+        setPasso(1); // Permanece no passo 1 mostrando arquivo carregado e o botão "CONTINUAR"
       }
-
-      // Se nenhum mês foi detectado pelo texto, tenta o mês corrente e seguintes
-      if (mesesEncontrados.size === 0) {
-        const mesAtualIdx = new Date().getMonth();
-        mesesEncontrados.add(MESES_NOMES[mesAtualIdx]);
-      }
-
-      const listaMeses = Array.from(mesesEncontrados).sort((a, b) => {
-        return MESES_NOMES.indexOf(a) - MESES_NOMES.indexOf(b);
-      });
-
-      setMesesDetectados(listaMeses);
-      setMesesSelecionados(listaMeses); // Por padrão, seleciona todos os encontrados
-      setPasso(1); // Permanece no passo 1 mostrando "Planilha carregada" e o botão "CONTINUAR"
     } catch (err: any) {
-      setErroArquivo(err.message || 'Erro ao carregar o arquivo da planilha.');
+      setErroArquivo(err.message || 'Erro ao carregar o arquivo da programação.');
     } finally {
       setIsProcessandoArquivo(false);
+      setMensagemProgresso('');
     }
   };
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleCarregarArquivo(e.dataTransfer.files[0]);
+      const file = e.dataTransfer.files[0];
+      const isPdfFile =
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf');
+      if (modulo === 'vida-ministerio' && !isPdfFile) {
+        setErroArquivo(
+          'Para a programação de Vida e Ministério, a importação é realizada exclusivamente por arquivo PDF oficial (.pdf).'
+        );
+        return;
+      }
+      handleCarregarArquivo(file);
     }
   };
 
@@ -323,7 +414,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
   // PARSER E VALIDAÇÃO DOS DADOS DE ACORDO COM O DEPARTAMENTO E MESES
   // =========================================================================
   const { registrosProcessados, inconsistencias, contagemPorMes, conflitosExistentes } = useMemo(() => {
-    if (linhasBrutas.length === 0 || mesesSelecionados.length === 0) {
+    if (mesesSelecionados.length === 0 || (!isPdf && linhasBrutas.length === 0)) {
       return {
         registrosProcessados: [],
         inconsistencias: [],
@@ -332,7 +423,126 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       };
     }
 
-    const mesesAlvoNorm = new Set(mesesSelecionados.map(normalizar));
+    const mesesAlvoNorm = new Set<string>(mesesSelecionados.map(normalizar));
+
+    // Se o arquivo for PDF com itens extraídos por IA
+    if (isPdf && itensPdfExtraidos.length > 0) {
+      const registros: RegistroProcessado[] = [];
+      const validacoes: ValidacaoItem[] = [];
+      const contagem: Record<string, number> = {};
+      mesesSelecionados.forEach((m) => (contagem[m] = 0));
+
+      if (modulo === 'vida-ministerio') {
+        itensPdfExtraidos.forEach((item: S140TSemana, idx: number) => {
+          const mesDetectado =
+            detectarMesTexto(item.periodo || item.dataReuniao || item.dataReferencia || '') ||
+            mesesSelecionados[0] ||
+            'Mês';
+          const mesNorm = normalizar(mesDetectado);
+
+          const pertenceAoMes =
+            mesesAlvoNorm.has(mesNorm) ||
+            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
+
+          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+            return;
+          }
+
+          contagem[mesDetectado] = (contagem[mesDetectado] || 0) + 1;
+
+          const avisosLinha: string[] = [];
+          if (!item.presidente) {
+            validacoes.push({
+              mes: mesDetectado,
+              data: item.dataReuniao || item.periodo,
+              campo: 'Presidente',
+              motivo: 'Presidente da reunião não informado na programação.',
+              gravidade: 'alerta',
+            });
+            avisosLinha.push('Presidente não informado');
+          }
+
+          const semanaFormatada = item.periodo || item.dataReuniao || `Semana ${idx + 1}`;
+
+          registros.push({
+            idTemp: item.id || `sem-${item.dataReferencia || Date.now() + '-' + idx}`,
+            mes: mesDetectado,
+            data: item.dataReuniao || item.periodo,
+            diaSemanaCalculado: 'Quinta-feira',
+            dadosFormatados: {
+              'Semana / Período': semanaFormatada,
+              'Presidente': item.presidente || '—',
+              'Cântico Inicial': item.canticoInicial ? `Cântico ${item.canticoInicial}` : '—',
+              'Oração Inicial': item.oracaoInicial || '—',
+              'Leitura Bíblica': item.leituraBiblica || '—',
+              'Tesouros (10 min)': item.discursoTesourosIrmao
+                ? `${item.discursoTesourosTitulo || 'Discurso'} (${item.discursoTesourosIrmao})`
+                : '—',
+              'Joias Espirituais': item.joiasEspirituaisIrmao || '—',
+              'Leitura da Bíblia': item.leituraBibliaIrmao || '—',
+              'Ministério': `${item.partesMinisterio?.length || 0} parte(s) com estudantes`,
+              'Cântico do Meio': item.canticoMeio ? `Cântico ${item.canticoMeio}` : '—',
+              'Vida Cristã': `${item.partesVidaCrista?.length || 0} parte(s)`,
+              'Estudo Bíblico': item.estudoBiblicoDirigente
+                ? `Dir: ${item.estudoBiblicoDirigente} | Leit: ${item.estudoBiblicoLeitor || '—'}`
+                : '—',
+              'Cântico Final': item.canticoFinal ? `Cântico ${item.canticoFinal}` : '—',
+              'Oração Final': item.oracaoFinal || '—',
+            },
+            itemFinal: {
+              ...item,
+              id: item.id || `sem-${item.dataReferencia || Date.now() + '-' + idx}`,
+            },
+            avisos: avisosLinha,
+          });
+        });
+      } else if (modulo === 'designacoes') {
+        itensPdfExtraidos.forEach((item: EscalaDesignacaoItem, idx: number) => {
+          const mesDetectado = item.mes || mesesSelecionados[0] || 'Mês';
+          const mesNorm = normalizar(item.mesChave || mesDetectado);
+
+          const pertenceAoMes =
+            mesesAlvoNorm.has(mesNorm) ||
+            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
+
+          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+            return;
+          }
+
+          contagem[mesDetectado] = (contagem[mesDetectado] || 0) + 1;
+
+          registros.push({
+            idTemp: item.id || `desig-pdf-${Date.now()}-${idx}`,
+            mes: mesDetectado,
+            data: item.dia,
+            diaSemanaCalculado: item.dia,
+            dadosFormatados: {
+              'Reunião': item.dia,
+              'Indicador': item.indicador || '—',
+              'Microfone': item.microfone || '—',
+              'Áudio e Vídeo':
+                item.audio && item.video
+                  ? `${item.audio} / ${item.video}`
+                  : item.audio || item.video || '—',
+              'Leitor': item.leitor || '—',
+              'Presidência': item.presidencia || '—',
+            },
+            itemFinal: {
+              ...item,
+              id: item.id || `desig-${Date.now()}-${idx}`,
+            },
+            avisos: [],
+          });
+        });
+      }
+
+      return {
+        registrosProcessados: registros,
+        inconsistencias: validacoes,
+        contagemPorMes: contagem,
+        conflitosExistentes: 0,
+      };
+    }
     const registros: RegistroProcessado[] = [];
     const validacoes: ValidacaoItem[] = [];
     const contagem: Record<string, number> = {};
@@ -742,47 +952,6 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           itemFinal,
           avisos: avisosLinha,
         });
-      } else if (modulo === 'vida-ministerio') {
-        const presidente = mapaColunas['presidente'] !== undefined ? cells[mapaColunas['presidente']] : cells[1] || '';
-        const discursoTesourosTitulo = cells[2] || 'Discurso de Tesouros da Palavra';
-        const discursoTesourosIrmao = cells[3] || '';
-
-        const itemFinal: S140TSemana = {
-          id: `s140t-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          periodo: `${String(diaNum).padStart(2, '0')} de ${mesContextoAtual}`,
-          dataReferencia: `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaNum).padStart(2, '0')}`,
-          dataReuniao: dataFormatada,
-          leituraBiblica: cells[2] || 'Leitura Semanal',
-          presidente: presidente.trim(),
-          canticoInicial: '1',
-          oracaoInicial: presidente.trim(),
-          discursoTesourosTitulo,
-          discursoTesourosIrmao: discursoTesourosIrmao.trim(),
-          discursoTesourosTempoMin: 10,
-          joiasEspirituaisIrmao: cells[4] || '',
-          leituraBibliaIrmao: cells[5] || '',
-          partesMinisterio: [],
-          canticoMeio: '2',
-          partesVidaCrista: [],
-          estudoBiblicoDirigente: cells[6] || '',
-          estudoBiblicoLeitor: cells[7] || '',
-          canticoFinal: '3',
-          oracaoFinal: cells[8] || presidente.trim(),
-        };
-
-        registros.push({
-          idTemp: itemFinal.id,
-          mes: mesContextoAtual,
-          data: dataFormatada,
-          diaSemanaCalculado,
-          dadosFormatados: {
-            Data: dataFormatada,
-            Presidente: presidente || '—',
-            'Discurso de Tesouros': discursoTesourosIrmao ? `${discursoTesourosTitulo} (${discursoTesourosIrmao})` : '—',
-          },
-          itemFinal,
-          avisos: avisosLinha,
-        });
       }
 
       contagem[mesContextoAtual] = (contagem[mesContextoAtual] || 0) + 1;
@@ -836,7 +1005,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       contagemPorMes: contagem,
       conflitosExistentes: totalConflitos,
     };
-  }, [linhasBrutas, mesesSelecionados, modulo]);
+  }, [isPdf, itensPdfExtraidos, linhasBrutas, mesesSelecionados, modulo]);
 
   // Executa a confirmação e salvamento definitivo dos dados
   const handleConfirmarImportacao = async () => {
@@ -903,7 +1072,10 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
     setPasso(1);
     setNomeArquivo('');
     setLinhasBrutas([]);
+    setIsPdf(false);
+    setItensPdfExtraidos([]);
     setErroArquivo('');
+    setMensagemProgresso('');
     setMesesDetectados([]);
     setMesesSelecionados([]);
     setShowProblemasModal(false);
@@ -922,15 +1094,27 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         {/* Cabeçalho do Modal */}
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
-              <FileSpreadsheet className="h-5 w-5" />
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                modulo === 'vida-ministerio'
+                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+              }`}
+            >
+              {modulo === 'vida-ministerio' ? (
+                <FileText className="h-5 w-5" />
+              ) : (
+                <FileSpreadsheet className="h-5 w-5" />
+              )}
             </div>
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
                 Modo Responsável
               </span>
               <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 dark:text-white">
-                IMPORTAR PROGRAMAÇÃO — {metaDepartamento.titulo.toUpperCase()}
+                {modulo === 'vida-ministerio'
+                  ? 'IMPORTAR PROGRAMAÇÃO PDF — VIDA E MINISTÉRIO'
+                  : `IMPORTAR PROGRAMAÇÃO — ${metaDepartamento.titulo.toUpperCase()}`}
               </h2>
             </div>
           </div>
@@ -971,14 +1155,14 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         {/* Corpo do Modal */}
         <div className="p-5 sm:p-6 space-y-5">
           {/* =============================================================== */}
-          {/* ETAPA 1: ESCOLHER ARQUIVO                                        */}
+          {/* ETAPA 1: ESCOLHER ARQUIVO (PDF OU PLANILHA)                      */}
           {/* =============================================================== */}
           {passo === 1 && (
             <div className="space-y-4">
               <input
                 type="file"
                 ref={fileInputRef}
-                accept=".xlsx, .xls, .csv"
+                accept={modulo === 'vida-ministerio' ? '.pdf,application/pdf' : '.pdf, .xlsx, .xls, .csv'}
                 onChange={(e) => e.target.files && handleCarregarArquivo(e.target.files[0])}
                 className="hidden"
               />
@@ -987,27 +1171,40 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
                     <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 mb-3">
-                      <CheckCircle2 className="h-6 w-6" />
+                      {isPdf ? <FileText className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
                     </div>
                     <p className="text-base font-extrabold text-emerald-800 dark:text-emerald-300">
-                      ✓ Planilha carregada
+                      ✓ {isPdf ? 'Documento PDF interpretado com sucesso' : 'Planilha carregada com sucesso'}
                     </p>
                     <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 font-medium truncate max-w-xs mx-auto">
                       {nomeArquivo}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLinhasBrutas([]);
-                        setNomeArquivo('');
-                        setMesesDetectados([]);
-                        setMesesSelecionados([]);
-                        fileInputRef.current?.click();
-                      }}
-                      className="mt-3 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
-                    >
-                      Trocar planilha
-                    </button>
+                    {isPdf && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>
+                          {itensPdfExtraidos.length}{' '}
+                          {modulo === 'vida-ministerio' ? 'semanas de reunião' : 'reuniões / designações'} detectadas
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLinhasBrutas([]);
+                          setNomeArquivo('');
+                          setIsPdf(false);
+                          setItensPdfExtraidos([]);
+                          setMesesDetectados([]);
+                          setMesesSelecionados([]);
+                          fileInputRef.current?.click();
+                        }}
+                        className="mt-3 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
+                      >
+                        Trocar arquivo
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -1016,7 +1213,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     onClick={() => setPasso(2)}
                     className="w-full rounded-2xl bg-blue-700 py-3.5 text-sm font-extrabold text-white shadow-md hover:bg-blue-800 active:scale-[0.99] transition"
                   >
-                    CONTINUAR
+                    CONTINUAR PARA SELEÇÃO DE MESES
                   </button>
                 </div>
               ) : (
@@ -1027,26 +1224,98 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800/40"
                   >
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 mb-3">
-                      <Upload className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                      Selecionar planilha
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Arquivos Excel (.xlsx, .xls) ou .csv
-                    </p>
+                    {modulo === 'vida-ministerio' ? (
+                      <>
+                        <div className="flex items-center justify-center mb-3">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 border border-purple-200 dark:bg-purple-950/70 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-xs">
+                            <FileText className="h-6 w-6" />
+                          </div>
+                        </div>
+                        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          Selecionar Arquivo PDF da Programação
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+                          Selecione o arquivo oficial em PDF (Apostila da Reunião ou Formulário S-140-T de Vida e Ministério).
+                        </p>
+                        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+                            <FileText className="h-3 w-3" />
+                            Apenas Arquivo PDF (Apostila / S-140-T)
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-50 border border-purple-200 dark:bg-purple-950/60 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-xs">
+                            <FileText className="h-5 w-5" />
+                          </div>
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 shadow-xs">
+                            <FileSpreadsheet className="h-5 w-5" />
+                          </div>
+                        </div>
+                        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          Selecionar Arquivo PDF ou Planilha
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-xs">
+                          Envie a folha de designações em PDF ou planilha Excel (.xlsx, .xls, .csv)
+                        </p>
+                        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+                            <FileText className="h-3 w-3" />
+                            PDF (Escala)
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <FileSpreadsheet className="h-3 w-3" />
+                            Planilha Excel / CSV
+                          </span>
+                        </div>
+                      </>
+                    )}
+
                     {isProcessandoArquivo && (
-                      <p className="mt-3 text-xs font-bold text-blue-600 animate-pulse">
-                        Carregando planilha...
-                      </p>
+                      <div className="mt-4 flex flex-col items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                        <span>{mensagemProgresso || 'Processando arquivo...'}</span>
+                      </div>
                     )}
                   </div>
 
                   {erroArquivo && (
-                    <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      <span>{erroArquivo}</span>
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-xs font-bold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-200 space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-extrabold text-rose-900 dark:text-rose-100">Não foi possível ler o arquivo:</p>
+                          <p className="mt-1 font-normal text-rose-700 dark:text-rose-300 leading-relaxed">{erroArquivo}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {arquivoSelecionadoRef.current && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (arquivoSelecionadoRef.current) {
+                                handleCarregarArquivo(arquivoSelecionadoRef.current);
+                              }
+                            }}
+                            className="rounded-xl bg-purple-700 px-3.5 py-2 text-xs font-extrabold text-white shadow-xs hover:bg-purple-800 active:scale-95 transition"
+                          >
+                            Tentar novamente
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErroArquivo('');
+                            arquivoSelecionadoRef.current = null;
+                            fileInputRef.current?.click();
+                          }}
+                          className="rounded-xl border border-rose-300 dark:border-rose-800 px-3.5 py-2 text-xs font-extrabold text-rose-800 dark:text-rose-200 hover:bg-rose-100 dark:hover:bg-rose-900/40"
+                        >
+                          Escolher outro arquivo
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1153,17 +1422,67 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                 </div>
               </div>
 
+              {/* Pré-visualização dos registros encontrados */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
+                  <span>Prévia das designações ({registrosProcessados.length}):</span>
+                  <span className="text-[11px] text-slate-400">Role para conferir</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1 rounded-xl border border-slate-200 dark:border-slate-800 p-2 bg-slate-50/50 dark:bg-slate-900/40">
+                  {registrosProcessados.map((reg, idx) => (
+                    <div
+                      key={reg.idTemp || idx}
+                      className="rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-2xs dark:border-slate-800 dark:bg-slate-900 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between font-black text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-1">
+                        <span className="text-blue-700 dark:text-blue-400">
+                          {reg.dadosFormatados['Semana / Período'] || reg.dadosFormatados['Reunião'] || reg.data}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          {reg.mes}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-slate-700 dark:text-slate-300">
+                        {Object.entries(reg.dadosFormatados).map(([k, v]) => {
+                          if (k === 'Semana / Período' || k === 'Reunião') return null;
+                          return (
+                            <div key={k} className="flex items-baseline justify-between gap-1 text-[11px]">
+                              <span className="text-slate-400 dark:text-slate-500 shrink-0">{k}:</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200 truncate text-right">
+                                {v}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {reg.avisos && reg.avisos.length > 0 && (
+                        <div className="pt-1 flex flex-wrap gap-1">
+                          {reg.avisos.map((av, avIdx) => (
+                            <span
+                              key={avIdx}
+                              className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded"
+                            >
+                              ⚠ {av}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Status da Validação */}
               {inconsistencias.length === 0 ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
-                  <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-center gap-2">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                  <p className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
-                    <span>✓ Dados prontos para importar</span>
+                    <span>✓ Todas as designações estão prontas para lançamento</span>
                   </p>
                 </div>
               ) : (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-center dark:border-amber-900/60 dark:bg-amber-950/30 space-y-2">
-                  <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center justify-center gap-2">
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-center dark:border-amber-900/60 dark:bg-amber-950/30 space-y-1.5">
+                  <p className="text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center justify-center gap-2">
                     <AlertTriangle className="h-4 w-4" />
                     <span>⚠ {inconsistencias.length} {inconsistencias.length === 1 ? 'item precisa' : 'itens precisam'} de atenção</span>
                   </p>
@@ -1172,7 +1491,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     onClick={() => setShowProblemasModal(true)}
                     className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-900 dark:text-amber-200 underline hover:opacity-80"
                   >
-                    VER PROBLEMAS
+                    VER DETALHES
                   </button>
                 </div>
               )}
@@ -1199,7 +1518,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           )}
 
           {/* =============================================================== */}
-          {/* ETAPA 4: CONFIRMAR                                               */}
+          {/* ETAPA 4: CONFIRMAR E ESCOLHER FORMA DE LANÇAMENTO                */}
           {/* =============================================================== */}
           {passo === 4 && (
             <div className="space-y-4">
@@ -1216,94 +1535,103 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500 dark:text-slate-400">Período:</span>
+                    <span className="text-slate-500 dark:text-slate-400">Período da importação:</span>
                     <span className="font-extrabold text-slate-900 dark:text-white">
                       {formatarMesesTexto(mesesSelecionados)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500 dark:text-slate-400">Total:</span>
+                    <span className="text-slate-500 dark:text-slate-400">Novos registros:</span>
                     <span className="font-extrabold text-slate-900 dark:text-white">
-                      {registrosProcessados.length} registros
+                      {registrosProcessados.length} semanas / designações
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Opções avançadas (Duplicações / Substituição) */}
-              <div className="border border-slate-200 rounded-xl dark:border-slate-800 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setShowOpcoesAvancadas((prev) => !prev)}
-                  className="w-full flex items-center justify-between p-3 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+              {/* Opções de Tratamento de Dados (Visíveis por Padrão com 'apenas_novos' selecionado) */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
+                  Forma de Lançamento no Sistema:
+                </label>
+
+                {/* OPÇÃO 1 (PADRÃO RECOMENDADO): CONTINUAR PROGRAMAÇÃO */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition ${
+                    modoSubstituicao === 'apenas_novos'
+                      ? 'border-emerald-600 bg-emerald-50/60 dark:border-emerald-500 dark:bg-emerald-950/30'
+                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                  }`}
                 >
-                  <span>Opções avançadas</span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${showOpcoesAvancadas ? 'rotate-180' : ''}`} />
-                </button>
-                {showOpcoesAvancadas && (
-                  <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/40 space-y-2 text-xs">
-                    <p className="font-bold text-slate-700 dark:text-slate-300">
-                      Tratamento de dados existentes:
-                    </p>
-
-                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20">
-                      <input
-                        type="radio"
-                        name="substituicao"
-                        value="apenas_novos"
-                        checked={modoSubstituicao === 'apenas_novos'}
-                        onChange={() => setModoSubstituicao('apenas_novos')}
-                        className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <div>
-                        <span className="font-bold text-slate-900 dark:text-white block">
-                          Continuar programação: Preservar meses atuais e adicionar novos (Recomendado)
-                        </span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                          Mantém todos os meses que já constam no sistema (ex: Setembro) e apenas acrescenta as novas semanas dos próximos meses na ordem cronológica.
-                        </span>
-                      </div>
-                    </label>
-
-                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
-                      <input
-                        type="radio"
-                        name="substituicao"
-                        value="substituir_meses"
-                        checked={modoSubstituicao === 'substituir_meses'}
-                        onChange={() => setModoSubstituicao('substituir_meses')}
-                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div>
-                        <span className="font-bold text-slate-900 dark:text-white block">
-                          Substituir apenas os meses desta planilha
-                        </span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                          Mantém programações de outros meses já cadastradas e atualiza apenas os meses da planilha ({formatarMesesTexto(mesesSelecionados)}).
-                        </span>
-                      </div>
-                    </label>
-
-                    <label className="flex items-start gap-2.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
-                      <input
-                        type="radio"
-                        name="substituicao"
-                        value="substituir_tudo"
-                        checked={modoSubstituicao === 'substituir_tudo'}
-                        onChange={() => setModoSubstituicao('substituir_tudo')}
-                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div>
-                        <span className="font-bold text-slate-900 dark:text-white block">
-                          Substituir toda a programação anterior
-                        </span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                          Descarta dados anteriores e define exclusivamente o período desta planilha ({formatarMesesTexto(mesesSelecionados)}).
-                        </span>
-                      </div>
-                    </label>
+                  <input
+                    type="radio"
+                    name="substituicao"
+                    value="apenas_novos"
+                    checked={modoSubstituicao === 'apenas_novos'}
+                    onChange={() => setModoSubstituicao('apenas_novos')}
+                    className="mt-1 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                  />
+                  <div>
+                    <span className="font-extrabold text-slate-900 dark:text-white text-sm block">
+                      ✓ Modo Contínuo (Recomendado)
+                    </span>
+                    <span className="text-xs text-slate-600 dark:text-slate-400 block mt-0.5">
+                      <strong>Mantém todos os meses atuais e anteriores</strong> já cadastrados no sistema (como Setembro) e <strong>acrescenta as novas designações</strong> para os próximos meses ({formatarMesesTexto(mesesSelecionados)}).
+                    </span>
                   </div>
-                )}
+                </label>
+
+                {/* OPÇÃO 2: SUBSTITUIR APENAS OS MESES DESTA IMPORTAÇÃO */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition ${
+                    modoSubstituicao === 'substituir_meses'
+                      ? 'border-blue-600 bg-blue-50/60 dark:border-blue-500 dark:bg-blue-950/30'
+                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="substituicao"
+                    value="substituir_meses"
+                    checked={modoSubstituicao === 'substituir_meses'}
+                    onChange={() => setModoSubstituicao('substituir_meses')}
+                    className="mt-1 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                      Substituir apenas os meses da nova programação
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
+                      Atualiza apenas o período de {formatarMesesTexto(mesesSelecionados)} e preserva todos os outros meses.
+                    </span>
+                  </div>
+                </label>
+
+                {/* OPÇÃO 3: SUBSTITUIR TUDO */}
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 cursor-pointer transition ${
+                    modoSubstituicao === 'substituir_tudo'
+                      ? 'border-amber-600 bg-amber-50/60 dark:border-amber-500 dark:bg-amber-950/30'
+                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="substituicao"
+                    value="substituir_tudo"
+                    checked={modoSubstituicao === 'substituir_tudo'}
+                    onChange={() => setModoSubstituicao('substituir_tudo')}
+                    className="mt-1 text-amber-600 focus:ring-amber-500 h-4 w-4"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                      Substituir toda a programação anterior
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
+                      Descarta programações anteriores e deixa exclusivamente as designações deste arquivo.
+                    </span>
+                  </div>
+                </label>
               </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -1323,7 +1651,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                   disabled={isGravando || registrosProcessados.length === 0}
                   className="flex-1 rounded-xl bg-emerald-600 py-3 text-xs sm:text-sm font-black uppercase text-white shadow-md hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 transition"
                 >
-                  {isGravando ? 'IMPORTANDO...' : 'IMPORTAR AGORA'}
+                  {isGravando ? 'LANÇANDO DESIGNAÇÕES...' : 'CONFIRMAR E LANÇAR'}
                 </button>
               </div>
             </div>

@@ -28,6 +28,7 @@ import {
   Volume2,
   Video,
   FileSpreadsheet,
+  FileText,
   Search,
   BookOpen,
   ChevronLeft,
@@ -403,10 +404,10 @@ export const DesignacoesView: React.FC = () => {
                   id="btn-importar-planilha-designacoes"
                   onClick={() => setIsImportPlanilhaOpen(true)}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
-                  title="Importar planilha trimestral de Designações"
+                  title="Importar programação de Designações via PDF ou Planilha"
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  <span>IMPORTAR PLANILHA</span>
+                  <FileText className="h-4 w-4" />
+                  <span>IMPORTAR PDF / PLANILHA</span>
                 </button>
                 <button
                   type="button"

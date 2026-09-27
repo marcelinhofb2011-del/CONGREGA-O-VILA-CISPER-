@@ -4,7 +4,8 @@ import {
   getStoredS140TSemanas,
   saveS140TSemana,
   deleteS140TSemana,
-  getSemanaAtualId,
+  identificarSemanaMaisProxima,
+  ordenarSemanasCronologicamente,
 } from '../data/s140tStorage';
 import {
   isAdminAuthenticated,
@@ -33,16 +34,16 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  Clock,
   Gem,
   Wheat,
+  Music,
 } from 'lucide-react';
 import { ImportarPlanilhaModal } from '../components/ImportarPlanilhaModal';
-import { ImportarVidaMinisterioPdfModal } from '../components/ImportarVidaMinisterioPdfModal';
 
-// Ícone de carneirinho personalizado no padrão Lucide para Nossa Vida Cristã
-const CarneirinhoIcon: React.FC<{ className?: string }> = ({ className = 'h-5 w-5' }) => (
+// Ícone de carneirinho adaptável no padrão Lucide (stroke 2, 24x24)
+const CarneirinhoIcon: React.FC<{ className?: string }> = ({ className = 'h-4.5 w-4.5' }) => (
   <svg
-    xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -52,14 +53,17 @@ const CarneirinhoIcon: React.FC<{ className?: string }> = ({ className = 'h-5 w-
     className={className}
     aria-hidden="true"
   >
-    {/* Corpo de lã fofinho do carneirinho */}
-    <path d="M8.5 16.5A3 3 0 0 1 6 14a2.8 2.8 0 0 1 .5-1.6 3 3 0 0 1-.2-3.4 3 3 0 0 1 2.7-1.5c.3 0 .6.05.9.15A3.2 3.2 0 0 1 13 6.5a3.2 3.2 0 0 1 2.8 1.6 3 3 0 0 1 2.2 2.9c0 .7-.2 1.3-.6 1.8a2.8 2.8 0 0 1 .6 1.7 3 3 0 0 1-2.5 2.5" />
-    {/* Cabeça do carneirinho */}
-    <path d="M16 11.5c0-1.8 1.2-2.8 2.5-2.8s2.5 1 2.5 2.8c0 1.5-1 2.5-2.5 2.5s-2.5-1-2.5-2.5Z" />
-    {/* Orelhas */}
-    <path d="M16.5 10c-.8-.5-1.5-.2-1.5.5M20.5 10c.8-.5 1.5-.2 1.5.5" />
+    {/* Corpo com lã do carneirinho */}
+    <path d="M19 12a3.5 3.5 0 0 0-3.5-3.5h-.5a3 3 0 0 0-3-2.5 3 3 0 0 0-3 2.5 3.5 3.5 0 0 0-3.5 3.5 3.5 3.5 0 0 0 3.5 3.5h6.5A3.5 3.5 0 0 0 19 12z" />
     {/* Patinhas */}
-    <path d="M9 16.5v3M11.5 16.5v3M14 16.5v3M16.5 16.5v3" />
+    <path d="M8 15.5V19" />
+    <path d="M11 15.5V19" />
+    <path d="M14 15.5V19" />
+    <path d="M16.5 15.5V19" />
+    {/* Cabeça */}
+    <circle cx="5" cy="11.5" r="2" />
+    {/* Orelhinha */}
+    <path d="M4.5 9.5c-.8-.3-1.5.3-1.2 1.2" />
   </svg>
 );
 
@@ -67,7 +71,6 @@ export const VidaEMinisterioView: React.FC = () => {
   const [semanas, setSemanas] = useState<S140TSemana[]>([]);
   const [semanaIdAtiva, setSemanaIdAtiva] = useState<string>('');
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
-  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
   // Autenticação do Irmão Responsável
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -86,16 +89,21 @@ export const VidaEMinisterioView: React.FC = () => {
   // Confirmação de exclusão
   const [semanaParaExcluir, setSemanaParaExcluir] = useState<string | null>(null);
 
-  // Carregar semanas e estado de autenticação
-  // Ao entrar ou retornar à aba, SEMPRE posiciona automaticamente na programação da semana atual
+  // Carregar semanas organizadas e selecionar automaticamente a semana mais próxima ao abrir
   const carregarDados = (novoIdDesejado?: string) => {
     const lista = getStoredS140TSemanas();
     setSemanas(lista);
     if (novoIdDesejado && lista.some((s) => s.id === novoIdDesejado)) {
       setSemanaIdAtiva(novoIdDesejado);
     } else if (lista.length > 0) {
-      const atualId = getSemanaAtualId(lista);
-      setSemanaIdAtiva(atualId || lista[0].id);
+      const maisProxima = identificarSemanaMaisProxima(lista);
+      setSemanaIdAtiva((prev) => {
+        // Ao abrir a aba (!prev) ou se a semana selecionada anteriormente não existe mais:
+        if (!prev || !lista.some((s) => s.id === prev)) {
+          return maisProxima ? maisProxima.id : lista[0].id;
+        }
+        return prev;
+      });
     }
   };
 
@@ -106,12 +114,13 @@ export const VidaEMinisterioView: React.FC = () => {
     const handleFirebaseUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<S140TSemana[]>;
       if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        const novas = customEvent.detail;
+        const novas = ordenarSemanasCronologicamente(customEvent.detail);
         setSemanas(novas);
         if (novas.length > 0) {
+          const maisProxima = identificarSemanaMaisProxima(novas);
           setSemanaIdAtiva((prev) => {
             if (!prev || !novas.some((s) => s.id === prev)) {
-              return getSemanaAtualId(novas) || novas[0].id;
+              return maisProxima ? maisProxima.id : novas[0].id;
             }
             return prev;
           });
@@ -125,38 +134,26 @@ export const VidaEMinisterioView: React.FC = () => {
       }
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        const lista = getStoredS140TSemanas();
-        setSemanas(lista);
-        const atualId = getSemanaAtualId(lista);
-        if (atualId) {
-          setSemanaIdAtiva(atualId);
-        }
-      }
-    };
-
     window.addEventListener('s140t-firebase-updated', handleFirebaseUpdate);
     window.addEventListener('storage', handleStorageChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener('s140t-firebase-updated', handleFirebaseUpdate);
       window.removeEventListener('storage', handleStorageChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // Semana ativa
+  // Semana mais próxima com base na data atual
+  const semanaMaisProxima = useMemo(() => {
+    return identificarSemanaMaisProxima(semanas);
+  }, [semanas]);
+
+  // Semana ativa (com fallback prioritário para a semana mais próxima)
   const semanaAtual = useMemo(() => {
     if (semanas.length === 0) return null;
     const encontrada = semanas.find((s) => s.id === semanaIdAtiva);
-    return encontrada || semanas[0];
-  }, [semanas, semanaIdAtiva]);
-
-  // ID da semana atual real calculada cronologicamente
-  const idSemanaAtualReal = useMemo(() => {
-    return getSemanaAtualId(semanas);
-  }, [semanas]);
+    if (encontrada) return encontrada;
+    return semanaMaisProxima || semanas[0];
+  }, [semanas, semanaIdAtiva, semanaMaisProxima]);
 
   // Índice da semana ativa para navegação anterior / próxima
   const indiceSemanaAtual = useMemo(() => {
@@ -231,9 +228,11 @@ export const VidaEMinisterioView: React.FC = () => {
     if (!semanaParaExcluir) return;
     const res = deleteS140TSemana(semanaParaExcluir);
     if (res.success && res.data) {
-      setSemanas(res.data);
-      if (res.data.length > 0) {
-        setSemanaIdAtiva(getSemanaAtualId(res.data) || res.data[0].id);
+      const ordenadas = ordenarSemanasCronologicamente(res.data);
+      setSemanas(ordenadas);
+      if (ordenadas.length > 0) {
+        const prox = identificarSemanaMaisProxima(ordenadas);
+        setSemanaIdAtiva(prox ? prox.id : ordenadas[0].id);
       } else {
         setSemanaIdAtiva('');
       }
@@ -247,7 +246,7 @@ export const VidaEMinisterioView: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 pb-16 pt-2">
+    <div className="w-full space-y-8 pb-16 pt-2">
       {/* ------------------------------------------------------------- */}
       {/* CABEÇALHO DO MÓDULO                                           */}
       {/* ------------------------------------------------------------- */}
@@ -269,22 +268,12 @@ export const VidaEMinisterioView: React.FC = () => {
                 <button
                   type="button"
                   id="btn-importar-pdf-vida-ministerio"
-                  onClick={() => setIsPdfModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-600 bg-red-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-red-700 transition"
-                  title="Importar documento PDF oficial da programação (S-140-T)"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-purple-600 bg-purple-700 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-purple-800 transition"
+                  title="Importar programação oficial de Vida e Ministério via arquivo PDF (Apostila da Reunião ou Formulário S-140-T)"
                 >
                   <FileText className="h-4 w-4" />
-                  <span>IMPORTAR PDF</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-importar-planilha-vida-ministerio"
-                  onClick={() => setIsImportModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-emerald-700 transition"
-                  title="Importar planilha de Vida e Ministério"
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  <span>PLANILHA</span>
+                  <span>IMPORTAR PROGRAMAÇÃO PDF</span>
                 </button>
                 <button
                   type="button"
@@ -341,11 +330,11 @@ export const VidaEMinisterioView: React.FC = () => {
       </header>
 
       {/* ------------------------------------------------------------- */}
-      {/* SELETOR DA SEMANA DA REUNIÃO (AUTOMATIZADO NA SEMANA ATUAL)   */}
+      {/* SELETOR SIMPLES DA SEMANA DA REUNIÃO                          */}
       {/* ------------------------------------------------------------- */}
       {semanas.length > 0 ? (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleSemanaAnterior}
@@ -369,9 +358,10 @@ export const VidaEMinisterioView: React.FC = () => {
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Semana selecionada:
                 </span>
-                {semanaAtual?.id === idSemanaAtualReal && (
-                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-black text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    Semana Atual
+                {semanaAtual?.id === semanaMaisProxima?.id && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-black uppercase text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <Clock className="h-3 w-3" />
+                    Mais Próxima
                   </span>
                 )}
               </div>
@@ -381,17 +371,17 @@ export const VidaEMinisterioView: React.FC = () => {
             </div>
           </div>
 
-          {/* Dropdown direto para escolher a semana e botão de retorno */}
+          {/* Dropdown direto para escolher a semana e botão para voltar à mais próxima */}
           <div className="flex flex-wrap items-center gap-2">
-            {semanaAtual?.id !== idSemanaAtualReal && idSemanaAtualReal && (
+            {semanaMaisProxima && semanaAtual?.id !== semanaMaisProxima.id && (
               <button
                 type="button"
-                onClick={() => setSemanaIdAtiva(idSemanaAtualReal)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-950/60 dark:text-blue-300 transition shadow-2xs"
-                title="Voltar para a programação da semana atual"
+                onClick={() => setSemanaIdAtiva(semanaMaisProxima.id)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 shadow-2xs hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-300 transition"
+                title="Voltar para a programação da semana mais próxima"
               >
-                <Calendar className="h-3.5 w-3.5" />
-                <span>Semana Atual</span>
+                <Clock className="h-3.5 w-3.5" />
+                <span>Ir para a mais próxima</span>
               </button>
             )}
 
@@ -400,13 +390,16 @@ export const VidaEMinisterioView: React.FC = () => {
               onChange={(e) => setSemanaIdAtiva(e.target.value)}
               className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
-              {semanas.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.id === idSemanaAtualReal
-                    ? `★ ${s.dataReuniao || s.periodo} (Semana Atual)`
-                    : (s.dataReuniao || s.periodo)}
-                </option>
-              ))}
+              {semanas.map((s) => {
+                const ehProxima = s.id === semanaMaisProxima?.id;
+                return (
+                  <option key={s.id} value={s.id}>
+                    {ehProxima ? '★ ' : ''}
+                    {s.dataReuniao ? `${s.dataReuniao} (${s.periodo})` : s.periodo}
+                    {ehProxima ? ' (Mais próxima)' : ''}
+                  </option>
+                );
+              })}
             </select>
 
             {/* Ações administrativas para a semana selecionada */}
@@ -435,42 +428,27 @@ export const VidaEMinisterioView: React.FC = () => {
       ) : null}
 
       {/* ------------------------------------------------------------- */}
-      {/* ÁREA PÚBLICA DE VISUALIZAÇÃO DA PROGRAMAÇÃO (PÁGINA CONTÍNUA) */}
+      {/* ÁREA PÚBLICA DE VISUALIZAÇÃO DA PROGRAMAÇÃO                   */}
       {/* ------------------------------------------------------------- */}
       {semanaAtual ? (
-        <div className="w-full rounded-3xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 overflow-hidden divide-y divide-slate-200 dark:divide-slate-800">
-          {/* 1. CABEÇALHO INTEGRADO DA SEMANA */}
-          <div className="bg-slate-50/70 p-5 sm:p-7 dark:bg-slate-900/60 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/80 pb-3.5 dark:border-slate-800">
-              <div>
-                <span className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
-                  Programação da Reunião
-                </span>
-                <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white">
-                  {semanaAtual.dataReuniao || semanaAtual.periodo}
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {semanaAtual.leituraBiblica && (
-                  <span className="rounded-xl bg-slate-200/90 px-3 py-1.5 text-xs font-black text-slate-800 dark:bg-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                    {semanaAtual.leituraBiblica}
-                  </span>
-                )}
-                {semanaAtual.ehVisita && (
-                  <span className="rounded-xl bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950 dark:text-amber-300 uppercase tracking-wider">
-                    Visita do Superintendente
-                  </span>
-                )}
-              </div>
+        <article className="w-full rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 lg:p-10 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-8">
+          {/* 1. DADOS DA REUNIÃO DA SEMANA */}
+          <section className="space-y-4">
+            <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Programação da Reunião
+              </span>
+              <h2 className="text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+                {semanaAtual.dataReuniao || semanaAtual.periodo}
+              </h2>
             </div>
 
-            {/* Presidência e Orações Integradas */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm sm:text-base">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 pt-1 text-base">
               <div>
                 <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Presidente
                 </span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
                   {semanaAtual.presidente || '—'}
                 </span>
               </div>
@@ -478,7 +456,8 @@ export const VidaEMinisterioView: React.FC = () => {
                 <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Cântico Inicial
                 </span>
-                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                <span className="inline-flex items-center gap-1.5 text-base sm:text-lg font-extrabold text-blue-700 dark:text-blue-400">
+                  <Music className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
                   {semanaAtual.canticoInicial ? `Cântico ${semanaAtual.canticoInicial}` : '—'}
                 </span>
               </div>
@@ -486,123 +465,103 @@ export const VidaEMinisterioView: React.FC = () => {
                 <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Oração Inicial
                 </span>
-                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                <span className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200">
                   {semanaAtual.oracaoInicial || '—'}
                 </span>
               </div>
               <div>
                 <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Oração Final
+                  Leitura Bíblica
                 </span>
-                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
-                  {semanaAtual.oracaoFinal || '—'}
+                <span className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200">
+                  {semanaAtual.leituraBiblica || '—'}
                 </span>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* 2. TESOUROS DA PALAVRA DE DEUS (INTEGRADO) */}
-          <div className="p-5 sm:p-7 space-y-4">
-            <div className="flex items-center gap-3 border-b-2 border-emerald-600 pb-2.5 dark:border-emerald-500">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white dark:bg-emerald-600 shadow-2xs">
+          {/* 2. TESOUROS DA PALAVRA DE DEUS */}
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 border-b-2 border-emerald-600 pb-3 dark:border-emerald-500">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-2xs dark:bg-emerald-600 dark:text-white">
                 <Gem className="h-4.5 w-4.5" />
               </div>
-              <h3 className="text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              <h3 className="text-lg font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300 sm:text-xl">
                 TESOUROS DA PALAVRA DE DEUS
               </h3>
             </div>
 
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+            <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-base sm:text-lg">
               {/* Discurso de 10 min */}
-              <div className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Discurso (10 min)
-                  </div>
-                  <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-                    {semanaAtual.discursoTesourosTitulo || 'Discurso Temático'}
-                  </div>
+              <li className="py-3.5 space-y-1">
+                <div className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.discursoTesourosTitulo || 'Discurso Temático'}
                 </div>
-                <div className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 sm:text-right">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Irmão: </span>
-                  {semanaAtual.discursoTesourosIrmao || '—'}
+                <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                  <span className="font-bold">{semanaAtual.discursoTesourosIrmao || '—'}</span>
                 </div>
-              </div>
+              </li>
 
               {/* Joias Espirituais */}
-              <div className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Joias Espirituais (10 min)
-                  </div>
-                  <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-                    {semanaAtual.joiasEspirituaisTitulo || 'Encontre Joias Espirituais'}
-                  </div>
+              <li className="py-3.5 space-y-1">
+                <div className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.joiasEspirituaisTitulo || 'Joias espirituais'}
                 </div>
-                <div className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 sm:text-right">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Irmão: </span>
-                  {semanaAtual.joiasEspirituaisIrmao || '—'}
+                <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                  <span className="font-bold">{semanaAtual.joiasEspirituaisIrmao || '—'}</span>
                 </div>
-              </div>
+              </li>
 
               {/* Leitura da Bíblia */}
-              <div className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Leitura da Bíblia (4 min)
-                  </div>
-                  <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-                    {semanaAtual.leituraBiblica || 'Leitura designada'}
-                  </div>
-                </div>
-                <div className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 sm:text-right">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Estudante: </span>
+              <li className="py-3.5 flex flex-wrap items-baseline gap-2">
+                <span className="font-extrabold text-slate-900 dark:text-white">Leitura da Bíblia:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
                   {semanaAtual.leituraBibliaIrmao || '—'}
-                </div>
-              </div>
-            </div>
-          </div>
+                </span>
+              </li>
+            </ul>
+          </section>
 
-          {/* 3. FAÇA SEU MELHOR NO MINISTÉRIO (INTEGRADO) */}
-          <div className="p-5 sm:p-7 space-y-4">
-            <div className="flex items-center gap-3 border-b-2 border-amber-500 pb-2.5 dark:border-amber-400">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 text-white dark:bg-amber-500 shadow-2xs">
+          {/* 3. FAÇA SEU MELHOR NO MINISTÉRIO */}
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 border-b-2 border-amber-500 pb-3 dark:border-amber-400">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400 text-amber-950 shadow-2xs dark:bg-amber-400 dark:text-amber-950">
                 <Wheat className="h-4.5 w-4.5" />
               </div>
-              <h3 className="text-base sm:text-lg font-black uppercase tracking-wider text-amber-900 dark:text-amber-300">
+              <h3 className="text-lg font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 sm:text-xl">
                 FAÇA SEU MELHOR NO MINISTÉRIO
               </h3>
             </div>
 
             {semanaAtual.partesMinisterio && semanaAtual.partesMinisterio.length > 0 ? (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-base sm:text-lg">
                 {semanaAtual.partesMinisterio.map((parte, idx) => (
-                  <div
+                  <li
                     key={parte.id || idx}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                    className="py-3.5 space-y-1.5"
                   >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900 dark:text-white text-base">
-                          {parte.numero ? `${parte.numero}. ` : ''}{parte.titulo || `Parte ${idx + 1}`}
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-extrabold text-slate-900 dark:text-white">
+                        {parte.titulo || `Parte ${idx + 1}`}
+                      </span>
+                      {parte.tempoMin && (
+                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          {parte.tempoMin} min
                         </span>
-                        {parte.tempoMin && (
-                          <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                            {parte.tempoMin} min
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm sm:text-base">
-                      <div className="flex items-baseline gap-1.5">
+                      <div className="flex items-baseline gap-2">
                         <span className="font-semibold text-slate-500 dark:text-slate-400">Estudante:</span>
                         <span className="font-bold text-slate-900 dark:text-white">
                           {parte.designado || '—'}
                         </span>
                       </div>
                       {parte.ajudante && (
-                        <div className="flex items-baseline gap-1.5">
+                        <div className="flex items-baseline gap-2">
                           <span className="font-semibold text-slate-500 dark:text-slate-400">Ajudante:</span>
                           <span className="font-bold text-slate-800 dark:text-slate-200">
                             {parte.ajudante}
@@ -610,102 +569,131 @@ export const VidaEMinisterioView: React.FC = () => {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 py-2">
                 Nenhuma designação de estudante cadastrada para esta semana.
               </p>
             )}
-          </div>
+          </section>
 
-          {/* 4. NOSSA VIDA CRISTÃ (INTEGRADO COM ESTUDO BÍBLICO) */}
-          <div className="p-5 sm:p-7 space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-red-600 pb-2.5 dark:border-red-500">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 text-white dark:bg-red-600 shadow-2xs">
-                  <CarneirinhoIcon className="h-4.5 w-4.5" />
-                </div>
-                <h3 className="text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  NOSSA VIDA CRISTÃ
-                </h3>
+          {/* CÂNTICO DO MEIO */}
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-6 dark:border-slate-800 dark:bg-slate-800/40">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
+                <Music className="h-4 w-4" />
               </div>
-              {semanaAtual.canticoMeio && (
-                <span className="text-xs font-bold text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/60 px-2.5 py-1 rounded-md">
-                  Cântico {semanaAtual.canticoMeio}
+              <div>
+                <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Cântico do Meio
                 </span>
-              )}
-            </div>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-              {/* Partes de Nossa Vida Cristã */}
-              {semanaAtual.partesVidaCrista && semanaAtual.partesVidaCrista.length > 0 ? (
-                semanaAtual.partesVidaCrista.map((parte, idx) => (
-                  <div
-                    key={parte.id || idx}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-                        {parte.titulo || `Parte ${idx + 1}`}
-                      </div>
-                      {parte.tempoMin && (
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          {parte.tempoMin} min
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 sm:text-right">
-                      <span className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Irmão: </span>
-                      {parte.designado || '—'}
-                    </div>
-                  </div>
-                ))
-              ) : null}
-
-              {/* Estudo Bíblico de Congregação integrado na sequência */}
-              <div className="py-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4.5 w-4.5 text-slate-700 dark:text-slate-300" />
-                  <span className="text-sm sm:text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                    Estudo Bíblico de Congregação (30 min)
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div className="flex items-baseline gap-2 text-sm sm:text-base">
-                    <span className="font-semibold text-slate-500 dark:text-slate-400">Dirigente:</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">
-                      {semanaAtual.estudoBiblicoDirigente || '—'}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2 text-sm sm:text-base">
-                    <span className="font-semibold text-slate-500 dark:text-slate-400">Leitor:</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">
-                      {semanaAtual.estudoBiblicoLeitor || '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Conclusão da Reunião integrada */}
-              <div className="pt-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">Cântico Final:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {semanaAtual.canticoFinal ? `Cântico ${semanaAtual.canticoFinal}` : '—'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">Oração Final:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {semanaAtual.oracaoFinal || '—'}
-                  </span>
-                </div>
+                <span className="text-base font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.canticoMeio ? `Cântico ${semanaAtual.canticoMeio}` : 'Cântico —'}
+                </span>
               </div>
             </div>
+            <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 hidden sm:inline">
+              Transição para Nossa Vida Cristã
+            </span>
           </div>
-        </div>
+
+          {/* 4. NOSSA VIDA CRISTÃ */}
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 border-b-2 border-red-600 pb-3 dark:border-red-500">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-600 text-white shadow-2xs dark:bg-red-600 dark:text-white">
+                <CarneirinhoIcon className="h-4.5 w-4.5" />
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-wider text-red-950 dark:text-red-300 sm:text-xl">
+                NOSSA VIDA CRISTÃ
+              </h3>
+            </div>
+
+            {semanaAtual.partesVidaCrista && semanaAtual.partesVidaCrista.length > 0 ? (
+              <ul className="divide-y divide-slate-200 dark:divide-slate-800 text-base sm:text-lg">
+                {semanaAtual.partesVidaCrista.map((parte, idx) => (
+                  <li key={parte.id || idx} className="py-3.5 space-y-1">
+                    <div className="font-extrabold text-slate-900 dark:text-white">
+                      {parte.titulo || `Parte ${idx + 1}`}
+                    </div>
+                    <div className="flex items-baseline gap-2 text-slate-800 dark:text-slate-200">
+                      <span className="font-semibold text-slate-500 dark:text-slate-400">Irmão responsável:</span>
+                      <span className="font-bold">{parte.designado || '—'}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 py-2">
+                Nenhuma parte cadastrada para esta semana.
+              </p>
+            )}
+          </section>
+
+          {/* 5. ESTUDO BÍBLICO DE CONGREGAÇÃO */}
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 border-b-2 border-slate-900 pb-3 dark:border-slate-100">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                <Users className="h-4.5 w-4.5" />
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white sm:text-xl">
+                ESTUDO BÍBLICO DE CONGREGAÇÃO
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-1 text-base sm:text-lg">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">
+                  Dirigente:
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.estudoBiblicoDirigente || '—'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">
+                  Leitor:
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.estudoBiblicoLeitor || '—'}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* 6. CONCLUSÃO DA REUNIÃO */}
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center gap-3 border-b-2 border-slate-300 pb-3 dark:border-slate-700">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+                <Music className="h-4.5 w-4.5" />
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white sm:text-xl">
+                CONCLUSÃO DA REUNIÃO
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-1 text-base sm:text-lg">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">
+                  Cântico Final:
+                </span>
+                <span className="inline-flex items-center gap-1.5 font-extrabold text-blue-700 dark:text-blue-400">
+                  <Music className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                  {semanaAtual.canticoFinal ? `Cântico ${semanaAtual.canticoFinal}` : '—'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold text-slate-500 dark:text-slate-400">
+                  Oração Final:
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {semanaAtual.oracaoFinal || '—'}
+                </span>
+              </div>
+            </div>
+          </section>
+        </article>
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
           <p className="text-base font-bold">Nenhuma programação cadastrada no momento.</p>
@@ -832,27 +820,6 @@ export const VidaEMinisterioView: React.FC = () => {
         semana={semanaParaEditar}
         onClose={() => setIsEditorOpen(false)}
         onSave={handleSalvarSemana}
-      />
-
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL DE IMPORTAÇÃO DE DOCUMENTO PDF OFICIAL (S-140-T)       */}
-      {/* ------------------------------------------------------------- */}
-      <ImportarVidaMinisterioPdfModal
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        onSucesso={(count) => {
-          const lista = getStoredS140TSemanas();
-          setSemanas(lista);
-          if (lista.length > 0) {
-            // Define a visualização na última semana adicionada ou primeira
-            setSemanaIdAtiva(lista[lista.length - 1].id);
-          }
-          setFeedback({
-            tipo: 'sucesso',
-            texto: `${count} semanas importadas do PDF com sucesso! Meses anteriores mantidos em perfeita continuidade.`,
-          });
-          setTimeout(() => setFeedback(null), 4500);
-        }}
       />
 
       {/* ------------------------------------------------------------- */}

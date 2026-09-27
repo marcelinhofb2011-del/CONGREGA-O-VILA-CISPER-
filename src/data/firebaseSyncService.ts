@@ -58,22 +58,13 @@ function isGenericSampleDoc(collectionName: string, docData: any): boolean {
   if (!docData) return false;
   const id = String(docData.id || '').toLowerCase();
   if (collectionName === COLLECTIONS.DESIGNACOES) {
-    if (/^(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
     if (docData.mesChave === 'abril' && (String(docData.indicador).includes('Pedro / Fernando') || String(docData.microfone).includes('Vanderlei'))) return true;
   }
   if (collectionName === COLLECTIONS.DISCURSOS) {
-    if (/^disc-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
     if (String(docData.mes).toLowerCase().includes('abril') && String(docData.tema).includes('verdadeira religião')) return true;
   }
   if (collectionName === COLLECTIONS.LIMPEZA) {
-    if (/^limp-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
     if (String(docData.grupo).includes('DANILO E VILSON') || String(docData.grupo).includes('SAMUEL / GEOVANE')) return true;
-  }
-  if (collectionName === COLLECTIONS.CAMPO_PROGRAMACAO) {
-    if (/^prog-campo-(1[0-1]|[1-9])$/.test(id)) return true;
-  }
-  if (collectionName === COLLECTIONS.CAMPO) {
-    if (/^c-(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)-\d+$/.test(id)) return true;
   }
   if (collectionName === COLLECTIONS.S140T) {
     if (id.startsWith('s140t-2026-04-')) return true;
@@ -251,18 +242,7 @@ class FirebaseSyncManager {
           semanas.push(docSnap.data() as S140TSemana);
         });
 
-        const temSemanasReais = semanas.some((s) => !s.id.startsWith('s140t-2026-04-') && !s.id.startsWith('sem-2026-'));
-        let semanasFinais = semanas;
-        if (temSemanasReais) {
-          semanasFinais = semanas.filter((s) => !s.id.startsWith('s140t-2026-04-'));
-          const docsParaPurgar = snapshot.docs.filter((d) => d.id.startsWith('s140t-2026-04-'));
-          if (docsParaPurgar.length > 0) {
-            const batch = writeBatch(db);
-            docsParaPurgar.forEach((d) => batch.delete(d.ref));
-            batch.commit().catch(() => {});
-          }
-        }
-
+        const semanasFinais = semanas.filter((s) => !s.id.startsWith('s140t-2026-04-'));
         semanasFinais.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
         localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(semanasFinais));
         window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: semanasFinais }));
@@ -1803,20 +1783,7 @@ class FirebaseSyncManager {
           items.push({ id: d.id, ...d.data() });
         });
 
-        // Se houver registros reais não-amostra, descarta amostras e purga do Firestore
-        const temRegistrosReais = items.some((it: any) => !isGenericSampleDoc(collectionName, it));
-        let itensFinais = items;
-        if (temRegistrosReais) {
-          itensFinais = items.filter((it: any) => !isGenericSampleDoc(collectionName, it));
-
-          // Purga do Firestore de forma assíncrona para que nunca mais reapareçam
-          const docsParaPurgar = snapshot.docs.filter((d) => isGenericSampleDoc(collectionName, { id: d.id, ...d.data() }));
-          if (docsParaPurgar.length > 0) {
-            const batch = writeBatch(db);
-            docsParaPurgar.forEach((d) => batch.delete(d.ref));
-            batch.commit().catch(() => {});
-          }
-        }
+        const itensFinais = items.filter((it: any) => !isGenericSampleDoc(collectionName, it));
 
         localStorage.setItem(localStorageKey, JSON.stringify(itensFinais));
         window.dispatchEvent(new CustomEvent(eventName, { detail: itensFinais }));
