@@ -3,10 +3,10 @@ import {
   CalendarCheck,
   BookOpen,
   Speech,
-  Compass,
-  Users,
   Sparkles,
+  Users,
   Map,
+  Compass,
   Lock,
 } from 'lucide-react';
 import { ScreenId } from './types';
@@ -19,47 +19,29 @@ export interface NavItem {
 }
 
 /**
- * Menu Principal da Congregação Vila Cisper
- * Acessos organizados de forma simples, direta e sem abreviações:
- * 1. Início
- * 2. Designações
- * 3. Vida e Ministério
- * 4. Discurso Público
- * 5. Serviço de Campo
- * 6. Assistência
- * 7. Grupo de Limpeza
- * 8. Território
+ * Abas de Acesso Principais da Congregação Vila Cisper:
+ * 1. Designação
+ * 2. Vida e ministério
+ * 3. Discurso público
+ * 4. Grupo de Limpeza
+ * 5. Assistência
+ * 6. Território
  */
-export const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'inicio',
-    label: 'Início',
-    icon: Home,
-  },
+export const ABAS_PRINCIPAIS: NavItem[] = [
   {
     id: 'designacoes',
-    label: 'Designações',
+    label: 'Designação',
     icon: CalendarCheck,
   },
   {
     id: 'vida-e-ministerio',
-    label: 'Vida e Ministério',
+    label: 'Vida e ministério',
     icon: BookOpen,
   },
   {
     id: 'discurso-publico',
-    label: 'Discurso Público',
+    label: 'Discurso público',
     icon: Speech,
-  },
-  {
-    id: 'servico-de-campo',
-    label: 'Serviço de Campo',
-    icon: Compass,
-  },
-  {
-    id: 'assistencia',
-    label: 'Assistência',
-    icon: Users,
   },
   {
     id: 'limpeza',
@@ -67,9 +49,28 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Sparkles,
   },
   {
+    id: 'assistencia',
+    label: 'Assistência',
+    icon: Users,
+  },
+  {
     id: 'territorios',
     label: 'Território',
     icon: Map,
+  },
+];
+
+export const NAV_ITEMS: NavItem[] = [
+  {
+    id: 'inicio',
+    label: 'Início',
+    icon: Home,
+  },
+  ...ABAS_PRINCIPAIS,
+  {
+    id: 'servico-de-campo',
+    label: 'Serviço de Campo',
+    icon: Compass,
   },
 ];
 

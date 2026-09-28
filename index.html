@@ -25,14 +25,32 @@
               target.protocol = 'vite-hmr';
               target.bufferedAmount = 0;
               target.binaryType = 'blob';
-              target.send = function() {};
+              target.send = function(data) {
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed && parsed.type === 'ping') {
+                    setTimeout(() => {
+                      try {
+                        target.dispatchEvent(new MessageEvent('message', {
+                          data: JSON.stringify({ type: 'pong' })
+                        }));
+                      } catch (_) {}
+                    }, 5);
+                  }
+                } catch (_) {}
+              };
               target.close = function() {
                 target.readyState = 3;
                 try { target.dispatchEvent(new Event('close')); } catch (_) {}
               };
               setTimeout(() => {
-                try { target.dispatchEvent(new Event('open')); } catch (_) {}
-              }, 0);
+                try {
+                  target.dispatchEvent(new Event('open'));
+                  target.dispatchEvent(new MessageEvent('message', {
+                    data: JSON.stringify({ type: 'connected' })
+                  }));
+                } catch (_) {}
+              }, 10);
               return target;
             }
             return new OriginalWebSocket(url, protocols);
@@ -46,7 +64,7 @@
           window.WebSocket = PatchedWebSocket;
         }
 
-        // 2. Suppress console and window errors related to Vite / WebSocket
+        // 2. Suppress console logs, warnings, and errors related to Vite / WebSocket
         const isViteMessage = function(item) {
           if (!item) return false;
           const str = typeof item === 'string' ? item : (item.message || item.stack || String(item));
@@ -59,16 +77,34 @@
           );
         };
 
-        const origError = console.error;
-        console.error = function(...args) {
+        const origLog = console.log;
+        console.log = function(...args) {
           if (args.some(isViteMessage)) return;
-          origError.apply(console, args);
+          origLog.apply(console, args);
+        };
+
+        const origInfo = console.info;
+        console.info = function(...args) {
+          if (args.some(isViteMessage)) return;
+          origInfo.apply(console, args);
+        };
+
+        const origDebug = console.debug;
+        console.debug = function(...args) {
+          if (args.some(isViteMessage)) return;
+          origDebug.apply(console, args);
         };
 
         const origWarn = console.warn;
         console.warn = function(...args) {
           if (args.some(isViteMessage)) return;
           origWarn.apply(console, args);
+        };
+
+        const origError = console.error;
+        console.error = function(...args) {
+          if (args.some(isViteMessage)) return;
+          origError.apply(console, args);
         };
 
         window.addEventListener('unhandledrejection', function(event) {

@@ -28,7 +28,16 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
     semana?.dataReferencia || new Date().toISOString().slice(0, 10)
   );
   const [presidente, setPresidente] = useState<string>(semana?.presidente || '');
+  const [canticoInicial, setCanticoInicial] = useState<string | number>(
+    semana?.canticoInicial ?? ''
+  );
   const [oracaoInicial, setOracaoInicial] = useState<string>(semana?.oracaoInicial || '');
+  const [canticoMeio, setCanticoMeio] = useState<string | number>(
+    semana?.canticoMeio ?? ''
+  );
+  const [canticoFinal, setCanticoFinal] = useState<string | number>(
+    semana?.canticoFinal ?? ''
+  );
   const [oracaoFinal, setOracaoFinal] = useState<string>(semana?.oracaoFinal || '');
 
   // 2. Tesouros da Palavra de Deus
@@ -162,9 +171,9 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
       oracaoInicial: oracaoInicial.trim(),
       oracaoFinal: oracaoFinal.trim(),
 
-      canticoInicial: semana?.canticoInicial || 1,
-      canticoMeio: semana?.canticoMeio || 100,
-      canticoFinal: semana?.canticoFinal || 140,
+      canticoInicial: canticoInicial !== '' ? canticoInicial : (semana?.canticoInicial || 1),
+      canticoMeio: canticoMeio !== '' ? canticoMeio : (semana?.canticoMeio || 100),
+      canticoFinal: canticoFinal !== '' ? canticoFinal : (semana?.canticoFinal || 140),
 
       tesourosSalao: 'Salão principal',
       discursoTesourosTitulo: tesourosTema.trim(),
@@ -266,6 +275,19 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+                  Cântico Inicial
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 1 ou 74"
+                  value={canticoInicial}
+                  onChange={(e) => setCanticoInicial(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
                   Oração Inicial
                 </label>
                 <input
@@ -274,20 +296,6 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
                   placeholder="Nome do irmão"
                   value={oracaoInicial}
                   onChange={(e) => setOracaoInicial(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
-                  Oração Final
-                </label>
-                <input
-                  type="text"
-                  list="lista-irmaos-ministrio"
-                  placeholder="Nome do irmão"
-                  value={oracaoFinal}
-                  onChange={(e) => setOracaoFinal(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
@@ -453,6 +461,25 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
             </div>
           </fieldset>
 
+          {/* CÂNTICO DO MEIO (TRANSIÇÃO) */}
+          <fieldset className="rounded-xl border border-slate-300 p-4 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/30">
+            <legend className="px-2 text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              Cântico do Meio (Transição)
+            </legend>
+            <div className="mt-1 max-w-xs">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+                Número do Cântico do Meio
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: 128"
+                value={canticoMeio}
+                onChange={(e) => setCanticoMeio(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+            </div>
+          </fieldset>
+
           {/* 6. NOSSA VIDA CRISTÃ (3 PARTES) */}
           <fieldset className="rounded-xl border border-slate-300 p-4 dark:border-slate-700">
             <legend className="px-2 text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
@@ -529,6 +556,41 @@ export const VidaEMinisterioEditorModal: React.FC<VidaEMinisterioEditorModalProp
                   placeholder="Nome do leitor"
                   value={estudoLeitor}
                   onChange={(e) => setEstudoLeitor(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+            </div>
+          </fieldset>
+
+          {/* 8. CONCLUSÃO DA REUNIÃO */}
+          <fieldset className="rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+            <legend className="px-2 text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              8. Conclusão da Reunião
+            </legend>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+                  Cântico Final
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 143"
+                  value={canticoFinal}
+                  onChange={(e) => setCanticoFinal(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+                  Oração Final
+                </label>
+                <input
+                  type="text"
+                  list="lista-irmaos-ministrio"
+                  placeholder="Nome do irmão"
+                  value={oracaoFinal}
+                  onChange={(e) => setOracaoFinal(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
