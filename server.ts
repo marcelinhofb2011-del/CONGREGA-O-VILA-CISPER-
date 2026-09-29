@@ -5,7 +5,7 @@ import express from 'express';
 import webPush from 'web-push';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
+import { createServer as createViteServer, createLogger } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } from './src/lib/vapidConfig.ts';
 
@@ -394,7 +394,20 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguin
 async function startServer() {
   if (!isProduction) {
     const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+    const customLogger = createLogger();
+    const origError = customLogger.error;
+    customLogger.error = (msg, options) => {
+      if (typeof msg === 'string' && (msg.includes('WebSocket') || msg.includes('ws') || msg.includes('hmr') || msg.includes('vite-hmr') || msg.includes('[vite]'))) return;
+      origError(msg, options);
+    };
+    const origWarn = customLogger.warn;
+    customLogger.warn = (msg, options) => {
+      if (typeof msg === 'string' && (msg.includes('WebSocket') || msg.includes('ws') || msg.includes('hmr') || msg.includes('vite-hmr') || msg.includes('[vite]'))) return;
+      origWarn(msg, options);
+    };
+
     const vite = await createViteServer({
+      customLogger,
       server: {
         middlewareMode: true,
         hmr: isHmrDisabled ? false : { server },
