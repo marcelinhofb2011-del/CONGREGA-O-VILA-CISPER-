@@ -250,46 +250,72 @@ export const VidaEMinisterioView: React.FC = () => {
       {/* ------------------------------------------------------------- */}
       {/* CABEÇALHO DO MÓDULO                                           */}
       {/* ------------------------------------------------------------- */}
-      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+      <header className="border-b border-slate-200 pb-4 dark:border-slate-800">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <span className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
+            <span className="text-[11px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
               Congregação: Vila Cisper
             </span>
-            <h1 className="mt-1 text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+            <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white">
               Vida e Ministério
             </h1>
           </div>
 
           {/* Botões do Responsável */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {isAdmin ? (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   id="btn-importar-pdf-vida-ministerio"
                   onClick={() => setIsImportModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-purple-600 bg-purple-700 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-purple-800 transition"
-                  title="Importar programação oficial de Vida e Ministério via arquivo PDF (Apostila da Reunião ou Formulário S-140-T)"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-2.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-purple-800 transition"
+                  title="Importar programação oficial via PDF"
                 >
-                  <FileText className="h-4 w-4" />
-                  <span>IMPORTAR PROGRAMAÇÃO PDF</span>
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Importar PDF</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={handleNovoCadastro}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-xs hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-2.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700 transition"
+                  title="Cadastrar nova programação"
                 >
-                  <Plus className="h-4 w-4" />
-                  <span>Cadastrar Programação</span>
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Cadastrar</span>
                 </button>
+
+                {semanaAtual && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleEditar(semanaAtual)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/50 dark:text-blue-300 transition"
+                      title="Editar a programação da semana selecionada"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSemanaParaExcluir(semanaAtual.id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-300 transition"
+                      title="Excluir a programação da semana selecionada"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Excluir</span>
+                    </button>
+                  </>
+                )}
+
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
                   title="Sair do modo responsável"
                 >
-                  <Unlock className="h-3.5 w-3.5 text-green-600" />
+                  <Unlock className="h-3 w-3 text-green-600" />
                   <span>Sair</span>
                 </button>
               </div>
@@ -301,7 +327,7 @@ export const VidaEMinisterioView: React.FC = () => {
                   setAuthError('');
                   setShowAuthModal(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 transition"
               >
                 <Lock className="h-3.5 w-3.5" />
                 <span>Responsável</span>
@@ -313,7 +339,7 @@ export const VidaEMinisterioView: React.FC = () => {
         {/* Feedback Alert */}
         {feedback && (
           <div
-            className={`mt-4 flex items-center gap-2 rounded-xl p-3.5 text-sm font-bold ${
+            className={`mt-3 flex items-center gap-2 rounded-xl p-3 text-xs sm:text-sm font-semibold ${
               feedback.tipo === 'sucesso'
                 ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                 : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
@@ -330,100 +356,63 @@ export const VidaEMinisterioView: React.FC = () => {
       </header>
 
       {/* ------------------------------------------------------------- */}
-      {/* SELETOR SIMPLES DA SEMANA DA REUNIÃO                          */}
+      {/* NAVEGAÇÃO ENTRE SEMANAS (CONTROLE LIMPO E SEM REPETIÇÕES)     */}
       {/* ------------------------------------------------------------- */}
       {semanas.length > 0 ? (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center gap-1.5 flex-1 w-full">
             <button
               type="button"
               onClick={handleSemanaAnterior}
               disabled={indiceSemanaAtual <= 0}
-              className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-slate-700 disabled:opacity-30 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-200 transition"
               aria-label="Semana anterior"
+              title="Semana anterior"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={handleProximaSemana}
-              disabled={indiceSemanaAtual >= semanas.length - 1}
-              className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              aria-label="Próxima semana"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-            <div className="ml-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Semana selecionada:
-                </span>
-                {semanaAtual?.id === semanaMaisProxima?.id && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-black uppercase text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    <Clock className="h-3 w-3" />
-                    Mais Próxima
-                  </span>
-                )}
-              </div>
-              <div className="text-base font-black text-slate-900 dark:text-white">
-                {semanaAtual?.dataReuniao || semanaAtual?.periodo}
-              </div>
-            </div>
-          </div>
-
-          {/* Dropdown direto para escolher a semana e botão para voltar à mais próxima */}
-          <div className="flex flex-wrap items-center gap-2">
-            {semanaMaisProxima && semanaAtual?.id !== semanaMaisProxima.id && (
-              <button
-                type="button"
-                onClick={() => setSemanaIdAtiva(semanaMaisProxima.id)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 shadow-2xs hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-300 transition"
-                title="Voltar para a programação da semana mais próxima"
-              >
-                <Clock className="h-3.5 w-3.5" />
-                <span>Ir para a mais próxima</span>
-              </button>
-            )}
 
             <select
+              id="select-semana-vida-ministerio"
               value={semanaAtual?.id}
               onChange={(e) => setSemanaIdAtiva(e.target.value)}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              className="flex-1 w-full min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-800 focus:border-blue-600 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
               {semanas.map((s) => {
                 const ehProxima = s.id === semanaMaisProxima?.id;
                 return (
                   <option key={s.id} value={s.id}>
                     {ehProxima ? '★ ' : ''}
-                    {s.dataReuniao ? `${s.dataReuniao} (${s.periodo})` : s.periodo}
+                    {s.dataReuniao || s.periodo}
                     {ehProxima ? ' (Mais próxima)' : ''}
                   </option>
                 );
               })}
             </select>
 
-            {/* Ações administrativas para a semana selecionada */}
-            {isAdmin && semanaAtual && (
-              <div className="flex items-center gap-1.5 ml-1">
-                <button
-                  type="button"
-                  onClick={() => handleEditar(semanaAtual)}
-                  className="rounded-lg border border-slate-300 bg-white p-2 text-blue-700 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-400"
-                  title="Editar programação"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSemanaParaExcluir(semanaAtual.id)}
-                  className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
-                  title="Excluir programação"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={handleProximaSemana}
+              disabled={indiceSemanaAtual >= semanas.length - 1}
+              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-slate-700 disabled:opacity-30 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-200 transition"
+              aria-label="Próxima semana"
+              title="Próxima semana"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
+
+          {semanaMaisProxima && semanaAtual?.id !== semanaMaisProxima.id && (
+            <button
+              type="button"
+              onClick={() => setSemanaIdAtiva(semanaMaisProxima.id)}
+              className="inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/60 dark:text-blue-300 transition"
+              title="Voltar para a programação da semana mais próxima"
+            >
+              <Clock className="h-3.5 w-3.5" />
+              <span>Semana Mais Próxima</span>
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -432,15 +421,24 @@ export const VidaEMinisterioView: React.FC = () => {
       {/* ------------------------------------------------------------- */}
       {semanaAtual ? (
         <article className="w-full rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 lg:p-10 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-8">
-          {/* 1. DADOS DA REUNIÃO DA SEMANA */}
+          {/* 1. DADOS DA REUNIÃO DA SEMANA (DESTAQUE PRINCIPAL E EXCLUSIVO) */}
           <section className="space-y-4">
-            <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Programação da Reunião
-              </span>
-              <h2 className="text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
-                {semanaAtual.dataReuniao || semanaAtual.periodo}
-              </h2>
+            <div className="border-b border-slate-200 pb-4 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Programação da Reunião
+                </span>
+                <h2 className="text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
+                  {semanaAtual.dataReuniao || semanaAtual.periodo}
+                </h2>
+              </div>
+
+              {semanaAtual.id === semanaMaisProxima?.id && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-black uppercase text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                  <Clock className="h-3.5 w-3.5" />
+                  Mais Próxima
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 pt-1 text-base">

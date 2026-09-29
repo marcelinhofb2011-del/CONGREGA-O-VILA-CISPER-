@@ -72,6 +72,31 @@ function isGenericSampleDoc(collectionName: string, docData: any): boolean {
   return false;
 }
 
+/**
+ * Sanitiza objetos recursivamente para o Firestore, removendo qualquer campo 'undefined'
+ * para evitar que o SDK do Cloud Firestore rejeite a gravação.
+ */
+export function cleanForFirestore<T>(input: T): T {
+  if (input === null || input === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(input)) {
+    return input
+      .filter((item) => item !== undefined)
+      .map((item) => (typeof item === 'object' && item !== null ? cleanForFirestore(item) : item)) as unknown as T;
+  }
+  if (typeof input === 'object') {
+    const clean: Record<string, any> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined) {
+        clean[key] = typeof value === 'object' && value !== null ? cleanForFirestore(value) : value;
+      }
+    }
+    return clean as T;
+  }
+  return input;
+}
+
 class FirebaseSyncManager {
   private status: SyncStatus = 'connecting';
   private listeners: Array<(status: SyncStatus) => void> = [];
@@ -143,6 +168,36 @@ class FirebaseSyncManager {
     return () => {
       this.solicitacoesListeners = this.solicitacoesListeners.filter((cb) => cb !== callback);
     };
+  }
+
+  /**
+   * Força uma consulta direta ao Cloud Firestore para obter as solicitações mais recentes em tempo real.
+   */
+  public async refreshSolicitacoes(): Promise<SolicitacaoTerritorio[]> {
+    try {
+      const colRef = collection(db, COLLECTIONS.SOLICITACOES);
+      const snapshot = await getDocs(colRef);
+      const lista: SolicitacaoTerritorio[] = [];
+      snapshot.forEach((docSnap) => {
+        const item = docSnap.data() as SolicitacaoTerritorio;
+        if (item && item.id) {
+          lista.push(item);
+        }
+      });
+      lista.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      this.solicitacoesCache = lista;
+      try {
+        localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(lista));
+      } catch {}
+      this.solicitacoesListeners.forEach((cb) => {
+        try { cb(lista); } catch (e) { console.error('Erro no listener de solicitações:', e); }
+      });
+      window.dispatchEvent(new CustomEvent('solicitacoes-firebase-updated', { detail: lista }));
+      return lista;
+    } catch (err) {
+      console.warn('Aviso: erro ao atualizar solicitações do Firestore:', err);
+      return this.solicitacoesCache;
+    }
   }
 
   public onTransferenciasChange(callback: (lista: TransferenciaTerritorio[]) => void): () => void {
@@ -551,7 +606,7 @@ class FirebaseSyncManager {
   public async saveSolicitacao(sol: SolicitacaoTerritorio, dispararPush = true): Promise<void> {
     try {
       const docRef = doc(db, COLLECTIONS.SOLICITACOES, sol.id);
-      await setDoc(docRef, sol);
+      await setDoc(docRef, cleanForFirestore(sol), { merge: true });
       this.setStatus('connected');
 
       // Disparar push notification aos responsáveis se for solicitação nova pendente
@@ -769,25 +824,41 @@ class FirebaseSyncManager {
     });
     window.dispatchEvent(new CustomEvent('historico-firebase-updated', { detail: novaListaHist }));
 
-    // 4. Gravação no Firestore com merge: true (nunca falha por doc inexistente)
+    // 4. Gravação no Firestore DIRETA, IMEDIATA e SANITIZADA (nunca falha por undefined)
     try {
-      const batch = writeBatch(db);
+      const cleanNova = cleanForFirestore(nova);
       const solRef = doc(db, COLLECTIONS.SOLICITACOES, solId);
-      batch.set(solRef, nova, { merge: true });
+      await setDoc(solRef, cleanNova, { merge: true });
 
       if (terObj && terAtualizado) {
-        const terRef = doc(db, COLLECTIONS.TERRITORIOS, terObj.id);
-        batch.set(terRef, terAtualizado, { merge: true });
+        try {
+          const cleanTer = cleanForFirestore(terAtualizado);
+          const terRef = doc(db, COLLECTIONS.TERRITORIOS, terObj.id);
+          await setDoc(terRef, cleanTer, { merge: true });
+        } catch (tErr) {
+          console.warn('Aviso: falha ao sincronizar território solicitado:', tErr);
+        }
       }
 
-      const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      batch.set(histRef, histItem, { merge: true });
+      try {
+        const cleanHist = cleanForFirestore(histItem);
+        const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
+        await setDoc(histRef, cleanHist, { merge: true });
+      } catch (hErr) {
+        console.warn('Aviso: falha ao sincronizar histórico da solicitação:', hErr);
+      }
 
-      await batch.commit();
       this.setStatus('connected');
     } catch (firestoreErr) {
-      console.warn('Aviso: Gravação offline/pendente no Firestore para solicitação:', firestoreErr);
+      console.error('Erro crítico ao gravar solicitação no Firestore:', firestoreErr);
       this.setStatus('offline');
+      // Tentativa de emergência
+      try {
+        const solRef = doc(db, COLLECTIONS.SOLICITACOES, solId);
+        await setDoc(solRef, cleanForFirestore(nova));
+      } catch (retryErr) {
+        console.error('Falha no fallback de gravação da solicitação:', retryErr);
+      }
     }
 
     // 5. Notifica responsáveis via push se habilitado
@@ -917,14 +988,14 @@ class FirebaseSyncManager {
       const batch = writeBatch(db);
       if (terAtualizado) {
         const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-        batch.set(terRef, terAtualizado, { merge: true });
+        batch.set(terRef, cleanForFirestore(terAtualizado), { merge: true });
       }
       if (solAtualizada) {
         const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
-        batch.set(solRef, solAtualizada, { merge: true });
+        batch.set(solRef, cleanForFirestore(solAtualizada), { merge: true });
       }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      batch.set(histRef, histItem, { merge: true });
+      batch.set(histRef, cleanForFirestore(histItem), { merge: true });
 
       await batch.commit();
       this.setStatus('connected');
@@ -1021,10 +1092,10 @@ class FirebaseSyncManager {
       const batch = writeBatch(db);
       if (terAtualizado) {
         const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-        batch.set(terRef, terAtualizado, { merge: true });
+        batch.set(terRef, cleanForFirestore(terAtualizado), { merge: true });
       }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      batch.set(histRef, histItem, { merge: true });
+      batch.set(histRef, cleanForFirestore(histItem), { merge: true });
       await batch.commit();
       this.setStatus('connected');
     } catch (err) {
@@ -1037,7 +1108,7 @@ class FirebaseSyncManager {
 
   /**
    * 4. Publicador conclui território:
-   * Altera status do território para "Concluído".
+   * Altera status do território para "Concluído" e desvincula do publicador.
    * Registra a conclusão no histórico permanente.
    */
   public async executeConclusaoBatch(
@@ -1050,12 +1121,13 @@ class FirebaseSyncManager {
     const ter = this.territoriosCache.find((t) => t.id === territorioId) ||
       getStoredTerritorios().find((t) => t.id === territorioId);
 
-    // 1. Atualizar Território
+    // 1. Atualizar Território (zera vínculo do publicador e marca como Concluído)
     let terAtualizado: Territorio | undefined;
     if (ter) {
       terAtualizado = {
         ...ter,
         status: 'Concluído',
+        designado_para: null,
         data_conclusao: dataHora,
         data_ultimo_retorno_sort: now.toISOString(),
         solicitado_por: null,
@@ -1109,10 +1181,10 @@ class FirebaseSyncManager {
       const batch = writeBatch(db);
       if (terAtualizado) {
         const terRef = doc(db, COLLECTIONS.TERRITORIOS, territorioId);
-        batch.set(terRef, terAtualizado, { merge: true });
+        batch.set(terRef, cleanForFirestore(terAtualizado), { merge: true });
       }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      batch.set(histRef, histItem, { merge: true });
+      batch.set(histRef, cleanForFirestore(histItem), { merge: true });
       await batch.commit();
       this.setStatus('connected');
     } catch (err) {
@@ -1229,14 +1301,14 @@ class FirebaseSyncManager {
       const batch = writeBatch(db);
       if (solAtualizada) {
         const solRef = doc(db, COLLECTIONS.SOLICITACOES, solicitacaoId);
-        batch.set(solRef, solAtualizada, { merge: true });
+        batch.set(solRef, cleanForFirestore(solAtualizada), { merge: true });
       }
       if (terAtualizado) {
         const terRef = doc(db, COLLECTIONS.TERRITORIOS, terAtualizado.id);
-        batch.set(terRef, terAtualizado, { merge: true });
+        batch.set(terRef, cleanForFirestore(terAtualizado), { merge: true });
       }
       const histRef = doc(db, COLLECTIONS.HISTORICO, histId);
-      batch.set(histRef, histItem, { merge: true });
+      batch.set(histRef, cleanForFirestore(histItem), { merge: true });
       await batch.commit();
       this.setStatus('connected');
     } catch (err) {

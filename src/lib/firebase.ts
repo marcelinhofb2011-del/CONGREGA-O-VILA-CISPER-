@@ -28,6 +28,7 @@ try {
         tabManager: persistentMultipleTabManager(),
       }),
       experimentalAutoDetectLongPolling: true,
+      ignoreUndefinedProperties: true,
     },
     firebaseConfig.firestoreDatabaseId || undefined
   );

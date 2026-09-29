@@ -102,13 +102,43 @@ export const TerritoriosView: React.FC = () => {
       setHistorico(lista);
     });
 
+    // Listener para o evento customizado disparado pelo firebaseSyncManager
+    const handleSolUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<SolicitacaoTerritorio[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail)) {
+        setSolicitacoes(customEvent.detail);
+      }
+    };
+    window.addEventListener('solicitacoes-firebase-updated', handleSolUpdated);
+
+    // Consulta inicial e atualização ao voltar para a aba ou desbloquear o aparelho
+    firebaseSync.refreshSolicitacoes().catch(() => {});
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        firebaseSync.refreshSolicitacoes().catch(() => {});
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
     return () => {
       unsubTer();
       unsubSol();
       unsubTr();
       unsubHist();
+      window.removeEventListener('solicitacoes-firebase-updated', handleSolUpdated);
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, []);
+
+  // Forçar atualização das solicitações ao entrar no modo responsável
+  useEffect(() => {
+    if (isAdmin) {
+      firebaseSync.refreshSolicitacoes().catch(() => {});
+    }
+  }, [isAdmin]);
 
   // Verificar status de notificações push
   useEffect(() => {

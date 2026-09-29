@@ -58,6 +58,48 @@
         "atualizadoEm": { "type": "string", "description": "Timestamp ISO da atualização", "required": false }
       }
     },
+    "solicitacaoTerritorio": {
+      "collectionName": "solicitacoes_territorios",
+      "description": "Solicitações de território feitas pelos publicadores para atendimento do responsável",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador da solicitação", "required": true },
+        "nome_publicador": { "type": "string", "description": "Nome do publicador solicitante", "required": true },
+        "data_solicitacao": { "type": "string", "description": "Data no formato DD/MM/AAAA", "required": true },
+        "hora_solicitacao": { "type": "string", "description": "Hora no formato HH:mm", "required": true },
+        "status": { "type": "string", "description": "Pendente, Designado ou Cancelada", "required": true },
+        "territorio_id": { "type": "string", "description": "ID do território preferido, se houver", "required": false },
+        "territorio_numero": { "type": "number", "description": "Número do território preferido, se houver", "required": false },
+        "data_designacao": { "type": "string", "description": "Data da designação quando atendida", "required": false },
+        "responsavel": { "type": "string", "description": "Nome do responsável que atendeu", "required": false },
+        "created_at": { "type": "string", "description": "Timestamp ISO da criação", "required": true }
+      }
+    },
+    "transferenciaTerritorio": {
+      "collectionName": "transferencias_territorios",
+      "description": "Solicitações de transferência e compartilhamento de território entre publicadores",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador da transferência", "required": true },
+        "territorio_id": { "type": "string", "description": "ID do território", "required": true },
+        "territorio_numero": { "type": "number", "description": "Número do território", "required": true },
+        "publicador_atual": { "type": "string", "description": "Publicador atual", "required": true },
+        "novo_publicador": { "type": "string", "description": "Novo publicador", "required": true },
+        "status": { "type": "string", "description": "Status da transferência", "required": true },
+        "created_at": { "type": "string", "description": "Timestamp ISO", "required": true }
+      }
+    },
+    "historicoTerritorio": {
+      "collectionName": "historico_territorios",
+      "description": "Registro de eventos e histórico de movimentações dos territórios",
+      "fields": {
+        "id": { "type": "string", "description": "Identificador do histórico", "required": true },
+        "territorio_id": { "type": "string", "description": "ID do território", "required": false },
+        "territorio_numero": { "type": "number", "description": "Número do território", "required": true },
+        "publicador": { "type": "string", "description": "Publicador envolvido", "required": true },
+        "acao": { "type": "string", "description": "Ação realizada", "required": true },
+        "status": { "type": "string", "description": "Status resultante", "required": true },
+        "created_at": { "type": "string", "description": "Timestamp ISO", "required": true }
+      }
+    },
     "discursoPublico": {
       "collectionName": "discursos_publicos",
       "description": "Programação dos discursos públicos bíblicos de fim de semana",
