@@ -6,6 +6,7 @@ export interface CampoDiaSemanaItem {
 }
 
 import { firebaseSync } from './firebaseSyncService';
+import { getHorarioSaidaDeCampo } from './horariosReunioesStorage';
 
 export interface CampoFimDeSemanaItem {
   id: string;
@@ -286,77 +287,77 @@ export const CAMPO_PROGRAMACAO_INICIAL: CampoProgramacao[] = [
   {
     id: 'prog-campo-1',
     data: '26/09/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Dhiego',
   },
   {
     id: 'prog-campo-2',
     data: '27/09/2026',
-    horario: '09:15',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Marcelo',
   },
   {
     id: 'prog-campo-3',
     data: '03/10/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Samuel',
   },
   {
     id: 'prog-campo-4',
     data: '04/10/2026',
-    horario: '09:15',
+    horario: '08:00',
     pontoEncontro: 'Ponto dos Grupos',
     responsavel: 'Danilo',
   },
   {
     id: 'prog-campo-5',
     data: '10/10/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Hermes',
   },
   {
     id: 'prog-campo-6',
     data: '11/10/2026',
-    horario: '09:15',
+    horario: '08:00',
     pontoEncontro: 'Ponto dos Grupos',
     responsavel: 'Kleber',
   },
   {
     id: 'prog-campo-7',
     data: '17/10/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Airton',
   },
   {
     id: 'prog-campo-8',
     data: '18/10/2026',
-    horario: '09:15',
+    horario: '08:00',
     pontoEncontro: 'Ponto dos Grupos',
     responsavel: 'Vilson',
   },
   {
     id: 'prog-campo-9',
     data: '24/10/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Marcelo',
   },
   {
     id: 'prog-campo-10',
     data: '25/10/2026',
-    horario: '09:15',
+    horario: '08:00',
     pontoEncontro: 'Ponto dos Grupos',
     responsavel: 'Geovane',
   },
   {
     id: 'prog-campo-11',
     data: '31/10/2026',
-    horario: '09:00',
+    horario: '08:00',
     pontoEncontro: 'Salão do Reino',
     responsavel: 'Kleber',
   },

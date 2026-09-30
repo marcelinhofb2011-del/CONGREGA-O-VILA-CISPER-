@@ -40,6 +40,7 @@ import {
   getStoredCampoProgramacao,
   saveBulkCampoProgramacao,
 } from '../data/campoStorage';
+import { getHorarioSaidaDeCampo } from '../data/horariosReunioesStorage';
 import {
   LimpezaEscalaItem,
   getStoredLimpezaEscalas,
@@ -823,7 +824,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
           avisos: avisosLinha,
         });
       } else if (modulo === 'campo') {
-        const horario = mapaColunas['horario'] !== undefined ? cells[mapaColunas['horario']] : cells[1] || '09:00';
+        const horario =
+          mapaColunas['horario'] !== undefined ? cells[mapaColunas['horario']] : cells[1] || getHorarioSaidaDeCampo();
         const pontoEncontro =
           mapaColunas['pontoEncontro'] !== undefined ? cells[mapaColunas['pontoEncontro']] : cells[2] || 'Salão do Reino';
         const responsavel =

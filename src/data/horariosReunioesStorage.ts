@@ -19,6 +19,9 @@ export interface HorariosReunioesConfig {
     dia: DiaSemanaReuniao;
     horario: string; // Ex: '18:00'
   };
+  saidaDeCampo: {
+    horario: string; // Ex: '08:00'
+  };
 }
 
 export const STORAGE_KEY_HORARIOS_REUNIOES = 'vila_cisper_horarios_reunioes_config_v1';
@@ -33,6 +36,9 @@ export const HORARIOS_REUNIOES_PADRAO: HorariosReunioesConfig = {
   fimDeSemana: {
     dia: 'Domingo',
     horario: '18:00',
+  },
+  saidaDeCampo: {
+    horario: '08:00',
   },
 };
 
@@ -75,7 +81,7 @@ function isValidConfig(parsed: any): parsed is HorariosReunioesConfig {
 }
 
 /**
- * Obtém as configurações atuais dos horários das reuniões
+ * Obtém as configurações atuais dos horários das reuniões e saídas de campo
  */
 export function getHorariosReunioes(): HorariosReunioesConfig {
   if (typeof window === 'undefined') return HORARIOS_REUNIOES_PADRAO;
@@ -84,7 +90,13 @@ export function getHorariosReunioes(): HorariosReunioesConfig {
     if (!raw) return HORARIOS_REUNIOES_PADRAO;
     const parsed = JSON.parse(raw);
     if (isValidConfig(parsed)) {
-      return parsed;
+      return {
+        meioDeSemana: parsed.meioDeSemana,
+        fimDeSemana: parsed.fimDeSemana,
+        saidaDeCampo: {
+          horario: parsed.saidaDeCampo?.horario || HORARIOS_REUNIOES_PADRAO.saidaDeCampo.horario,
+        },
+      };
     }
   } catch (e) {
     console.warn('Erro ao ler horários das reuniões:', e);
@@ -93,18 +105,33 @@ export function getHorariosReunioes(): HorariosReunioesConfig {
 }
 
 /**
+ * Obtém diretamente o horário atualmente configurado para as Saídas de Campo
+ */
+export function getHorarioSaidaDeCampo(): string {
+  return getHorariosReunioes().saidaDeCampo.horario;
+}
+
+/**
  * Salva as configurações de horários das reuniões e despacha evento para sincronização no app
  */
 export function saveHorariosReunioes(config: HorariosReunioesConfig): void {
   try {
-    localStorage.setItem(STORAGE_KEY_HORARIOS_REUNIOES, JSON.stringify(config));
+    const configCompleta: HorariosReunioesConfig = {
+      meioDeSemana: config.meioDeSemana,
+      fimDeSemana: config.fimDeSemana,
+      saidaDeCampo: {
+        horario: config.saidaDeCampo?.horario?.trim() || HORARIOS_REUNIOES_PADRAO.saidaDeCampo.horario,
+      },
+    };
+
+    localStorage.setItem(STORAGE_KEY_HORARIOS_REUNIOES, JSON.stringify(configCompleta));
     window.dispatchEvent(
-      new CustomEvent('horarios-reunioes-updated', { detail: config })
+      new CustomEvent('horarios-reunioes-updated', { detail: configCompleta })
     );
 
     // Sincroniza de forma assíncrona com o Firestore
     const docRef = doc(db, FIRESTORE_HORARIOS_COLLECTION, FIRESTORE_HORARIOS_DOC_ID);
-    setDoc(docRef, { ...config, atualizadoEm: new Date().toISOString() }).catch((err) => {
+    setDoc(docRef, { ...configCompleta, atualizadoEm: new Date().toISOString() }).catch((err) => {
       console.warn('Erro ao sincronizar horários com Firestore:', err);
     });
   } catch (e) {
@@ -120,15 +147,19 @@ if (typeof window !== 'undefined') {
       if (snap.exists()) {
         const data = snap.data();
         if (isValidConfig(data)) {
+          const configCompleta: HorariosReunioesConfig = {
+            meioDeSemana: data.meioDeSemana,
+            fimDeSemana: data.fimDeSemana,
+            saidaDeCampo: {
+              horario: data.saidaDeCampo?.horario || HORARIOS_REUNIOES_PADRAO.saidaDeCampo.horario,
+            },
+          };
           localStorage.setItem(
             STORAGE_KEY_HORARIOS_REUNIOES,
-            JSON.stringify({
-              meioDeSemana: data.meioDeSemana,
-              fimDeSemana: data.fimDeSemana,
-            })
+            JSON.stringify(configCompleta)
           );
           window.dispatchEvent(
-            new CustomEvent('horarios-reunioes-updated', { detail: data })
+            new CustomEvent('horarios-reunioes-updated', { detail: configCompleta })
           );
         }
       }

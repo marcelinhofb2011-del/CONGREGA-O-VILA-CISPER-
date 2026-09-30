@@ -98,7 +98,47 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<AdminTabId | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTabId | null>(() => {
+    try {
+      if (window.history.state && window.history.state.adminTab) {
+        return window.history.state.adminTab as AdminTabId;
+      }
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') as AdminTabId | null;
+      if (tabParam) return tabParam;
+    } catch {}
+    return null;
+  });
+
+  // Sincronização da aba interna do painel com o histórico do navegador / botão Voltar do Android
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.screen === 'administracao') {
+        setActiveTab((event.state.adminTab as AdminTabId) || null);
+      } else if (!event.state || event.state.screen !== 'administracao') {
+        setActiveTab(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleSelectTab = (tabId: AdminTabId) => {
+    setActiveTab(tabId);
+    window.history.pushState(
+      { screen: 'administracao', adminTab: tabId },
+      '',
+      `/?screen=administracao&tab=${tabId}`
+    );
+  };
+
+  const handleVoltarAoPainel = () => {
+    if (window.history.state && window.history.state.adminTab) {
+      window.history.back();
+    } else {
+      setActiveTab(null);
+    }
+  };
 
   // Organização dos recursos por departamento
   const SECOES: SecaoRecurso[] = [
@@ -272,10 +312,14 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
 
   const handleSalvarHorarios = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!horariosConfig.meioDeSemana.horario.trim() || !horariosConfig.fimDeSemana.horario.trim()) {
+    if (
+      !horariosConfig.meioDeSemana.horario.trim() ||
+      !horariosConfig.fimDeSemana.horario.trim() ||
+      !horariosConfig.saidaDeCampo?.horario?.trim()
+    ) {
       setHorariosFeedback({
         tipo: 'erro',
-        msg: 'Preencha os horários das duas reuniões.',
+        msg: 'Preencha os horários das reuniões e da saída de campo.',
       });
       return;
     }
@@ -283,7 +327,7 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
     saveHorariosReunioes(horariosConfig);
     setHorariosFeedback({
       tipo: 'sucesso',
-      msg: 'Horários das reuniões salvos e sincronizados com sucesso!',
+      msg: 'Horários configurados salvos e sincronizados com sucesso!',
     });
 
     setTimeout(() => {
@@ -460,7 +504,7 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
                       key={item.id}
                       id={`admin-btn-${item.id}`}
                       type="button"
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => handleSelectTab(item.id)}
                       className="group flex items-center justify-between gap-3 rounded-xl px-4 py-3 sm:py-3.5 text-left transition-all border border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-950 shadow-2xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-850 active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -497,7 +541,7 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
             <button
               id="btn-voltar-ao-painel"
               type="button"
-              onClick={() => setActiveTab(null)}
+              onClick={handleVoltarAoPainel}
               className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs sm:text-sm font-bold text-blue-700 hover:bg-blue-100 hover:text-blue-900 transition active:scale-[0.99] dark:border-blue-800/60 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/60"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1029,6 +1073,41 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
                   </div>
                 </div>
 
+                {/* 3. Saída de Campo */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-850/50 space-y-4">
+                  <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-700 text-xs font-bold text-white">
+                      3
+                    </span>
+                    <h4 className="text-base font-extrabold uppercase tracking-wide">
+                      Saída de Campo
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                        Horário
+                      </label>
+                      <input
+                        id="input-horario-saida-campo"
+                        type="time"
+                        value={horariosConfig.saidaDeCampo?.horario || '08:00'}
+                        onChange={(e) =>
+                          setHorariosConfig({
+                            ...horariosConfig,
+                            saidaDeCampo: {
+                              horario: e.target.value,
+                            },
+                          })
+                        }
+                        required
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-semibold text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {horariosFeedback && (
                   <div
                     className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
@@ -1051,7 +1130,7 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
                   type="submit"
                   className="w-full rounded-xl bg-blue-700 py-3.5 text-base font-extrabold text-white shadow-sm hover:bg-blue-800 transition active:scale-[0.99]"
                 >
-                  Salvar Horários das Reuniões
+                  Salvar
                 </button>
               </form>
             </div>

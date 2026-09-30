@@ -122,6 +122,14 @@ export const TerritoriosView: React.FC = () => {
     window.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
+    // Sincronização do modo responsável com o botão Voltar do Android
+    const handlePopStateTerritorios = (event: PopStateEvent) => {
+      if (event.state && event.state.screen === 'territorios') {
+        setIsAdmin(Boolean(event.state.isResponsible));
+      }
+    };
+    window.addEventListener('popstate', handlePopStateTerritorios);
+
     return () => {
       unsubTer();
       unsubSol();
@@ -130,6 +138,7 @@ export const TerritoriosView: React.FC = () => {
       window.removeEventListener('solicitacoes-firebase-updated', handleSolUpdated);
       window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('popstate', handlePopStateTerritorios);
     };
   }, []);
 
@@ -217,6 +226,11 @@ export const TerritoriosView: React.FC = () => {
       setPasswordInput('');
       setAuthError('');
       setNotification('Área do Responsável autenticada com sucesso.');
+      window.history.pushState(
+        { screen: 'territorios', isResponsible: true },
+        '',
+        '/?screen=territorios&view=responsavel'
+      );
     } else {
       setAuthError('Senha incorreta. Verifique com os irmãos responsáveis.');
     }
@@ -226,6 +240,9 @@ export const TerritoriosView: React.FC = () => {
     setAdminAuthenticated(false);
     setIsAdmin(false);
     setNotification('Área do Responsável encerrada.');
+    if (window.history.state && window.history.state.isResponsible) {
+      window.history.back();
+    }
   };
 
   const handleSalvarNovaSenha = (e: React.FormEvent) => {

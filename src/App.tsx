@@ -21,8 +21,43 @@ import { ConfiguracoesView } from './views/ConfiguracoesView';
 import { PlaceholderView } from './views/PlaceholderView';
 import { usePWA } from './hooks/usePWA';
 
+const VALID_SCREENS: ScreenId[] = [
+  'inicio',
+  'programacao',
+  'designacoes',
+  'vida-e-ministerio',
+  'discurso-publico',
+  'servico-de-campo',
+  'limpeza',
+  'territorios',
+  'avisos',
+  'administracao',
+  'secretario',
+  'relatorios',
+  'assistencia',
+  'configuracoes',
+];
+
+const isValidScreenId = (val: any): val is ScreenId => {
+  return typeof val === 'string' && VALID_SCREENS.includes(val as ScreenId);
+};
+
+const getScreenFromUrlOrState = (): ScreenId => {
+  try {
+    if (window.history.state && isValidScreenId(window.history.state.screen)) {
+      return window.history.state.screen;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const screenParam = params.get('screen');
+    if (isValidScreenId(screenParam)) {
+      return screenParam;
+    }
+  } catch {}
+  return 'inicio';
+};
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>('inicio');
+  const [currentScreen, setCurrentScreen] = useState<ScreenId>(getScreenFromUrlOrState);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const { isOnline } = usePWA();
 
@@ -57,21 +92,51 @@ export default function App() {
     localStorage.setItem('vila_cisper_text_size', textSize);
   }, [textSize]);
 
-  // Read URL query parameters (e.g. ?screen=territorios when clicking push notification)
+  // Sincronização com o histórico do navegador / PWA e botão Voltar nativo do Android
   useEffect(() => {
-    const handleUrlNav = () => {
-      try {
+    // Inicializa a primeira entrada do histórico com a tela atual (evita duplicar entrada no histórico inicial)
+    const initialScreen = getScreenFromUrlOrState();
+    const initialUrl = initialScreen === 'inicio' ? '/' : `/?screen=${initialScreen}`;
+    window.history.replaceState({ screen: initialScreen }, '', initialUrl);
+
+    // Escuta o botão Voltar nativo do Android e histórico do navegador
+    const handlePopState = (event: PopStateEvent) => {
+      let targetScreen: ScreenId = 'inicio';
+      if (event.state && isValidScreenId(event.state.screen)) {
+        targetScreen = event.state.screen;
+      } else {
         const params = new URLSearchParams(window.location.search);
-        const screenParam = params.get('screen') as ScreenId | null;
-        if (screenParam) {
-          setCurrentScreen(screenParam);
+        const screenParam = params.get('screen');
+        if (isValidScreenId(screenParam)) {
+          targetScreen = screenParam;
         }
-      } catch {}
+      }
+      setCurrentScreen(targetScreen);
+      setIsDrawerOpen(false);
     };
-    handleUrlNav();
-    window.addEventListener('popstate', handleUrlNav);
-    return () => window.removeEventListener('popstate', handleUrlNav);
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Navegação que empilha cada tela acessada no histórico do navegador
+  const navigateToScreen = (screen: ScreenId) => {
+    setIsDrawerOpen(false);
+    if (screen === currentScreen) {
+      return;
+    }
+    const targetUrl = screen === 'inicio' ? '/' : `/?screen=${screen}`;
+    window.history.pushState({ screen }, '', targetUrl);
+    setCurrentScreen(screen);
+  };
+
+  const handleBackToPublic = () => {
+    if (window.history.state && window.history.state.screen === 'administracao' && window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigateToScreen('inicio');
+    }
+  };
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
@@ -80,7 +145,7 @@ export default function App() {
   const renderActiveScreen = () => {
     switch (currentScreen) {
       case 'inicio':
-        return <InicioView onNavigate={(screen) => setCurrentScreen(screen)} />;
+        return <InicioView onNavigate={(screen) => navigateToScreen(screen)} />;
       case 'programacao':
         return <ProgramacaoGeralView />;
       case 'designacoes':
@@ -98,7 +163,7 @@ export default function App() {
       case 'avisos':
         return <AvisosView />;
       case 'administracao':
-        return <AdminPainelView onBackToPublic={() => setCurrentScreen('inicio')} />;
+        return <AdminPainelView onBackToPublic={handleBackToPublic} />;
       case 'secretario':
         return <SecretarioView />;
       case 'relatorios':
@@ -130,14 +195,14 @@ export default function App() {
         isOnline={isOnline}
         textSize={textSize}
         onChangeTextSize={setTextSize}
-        onNavigateToAdmin={() => setCurrentScreen('administracao')}
+        onNavigateToAdmin={() => navigateToScreen('administracao')}
       />
 
       {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           currentScreen={currentScreen}
-          onSelectScreen={(screen) => setCurrentScreen(screen)}
+          onSelectScreen={(screen) => navigateToScreen(screen)}
         />
 
         {/* Main Content Area - Mobile First, pb-20 for standard bottom navigation clearance */}
@@ -153,10 +218,7 @@ export default function App() {
       {/* Navegação Inferior para Celular */}
       <BottomNav
         currentScreen={currentScreen}
-        onSelectScreen={(screen) => {
-          setCurrentScreen(screen);
-          setIsDrawerOpen(false);
-        }}
+        onSelectScreen={(screen) => navigateToScreen(screen)}
         onOpenDrawer={() => setIsDrawerOpen((prev) => !prev)}
         isDrawerOpen={isDrawerOpen}
       />
@@ -166,7 +228,7 @@ export default function App() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         currentScreen={currentScreen}
-        onSelectScreen={(screen) => setCurrentScreen(screen)}
+        onSelectScreen={(screen) => navigateToScreen(screen)}
       />
     </div>
   );

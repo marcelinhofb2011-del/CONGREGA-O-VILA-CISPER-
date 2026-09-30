@@ -27,6 +27,11 @@ import {
   deleteStoredCampoProgramacao,
 } from '../data/campoStorage';
 import {
+  getHorariosReunioes,
+  HorariosReunioesConfig,
+  STORAGE_KEY_HORARIOS_REUNIOES,
+} from '../data/horariosReunioesStorage';
+import {
   isAdminAuthenticated,
   setAdminAuthenticated,
   verifyAdminPassword,
@@ -60,6 +65,9 @@ export const ServicoDeCampoView: React.FC = () => {
   const [programacoes, setProgramacoes] = useState<CampoProgramacao[]>([]);
   const [programacaoIdAtiva, setProgramacaoIdAtiva] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState<boolean>(isAdminAuthenticated());
+  const [horariosConfig, setHorariosConfig] = useState<HorariosReunioesConfig>(() =>
+    getHorariosReunioes()
+  );
 
   // Modais
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -89,6 +97,7 @@ export const ServicoDeCampoView: React.FC = () => {
   const carregarDados = () => {
     setProgramacoes(getStoredCampoProgramacao());
     setIsAdmin(isAdminAuthenticated());
+    setHorariosConfig(getHorariosReunioes());
   };
 
   useEffect(() => {
@@ -98,23 +107,40 @@ export const ServicoDeCampoView: React.FC = () => {
       carregarDados();
     };
 
+    const handleHorariosUpdate = (e: CustomEvent<HorariosReunioesConfig>) => {
+      if (e.detail) {
+        setHorariosConfig(e.detail);
+      } else {
+        setHorariosConfig(getHorariosReunioes());
+      }
+    };
+
     const handleStorageChange = (e: StorageEvent) => {
       if (
         e.key === 'vila_cisper_campo_programacao_2026' ||
-        e.key === 'vila_cisper_admin_auth'
+        e.key === 'vila_cisper_admin_auth' ||
+        e.key === STORAGE_KEY_HORARIOS_REUNIOES
       ) {
         carregarDados();
       }
     };
 
     window.addEventListener('campo-programacao-firebase-updated', handleFirebaseUpdate);
+    window.addEventListener('horarios-reunioes-updated', handleHorariosUpdate as EventListener);
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
       window.removeEventListener('campo-programacao-firebase-updated', handleFirebaseUpdate);
+      window.removeEventListener('horarios-reunioes-updated', handleHorariosUpdate as EventListener);
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
+
+  // Horário oficial configurado nas configurações gerais do modo responsável
+  const horarioSaidaConfig = horariosConfig.saidaDeCampo?.horario || '08:00';
+  const getHorarioDisplay = (item?: CampoProgramacao | null) => {
+    return horarioSaidaConfig || item?.horario || '08:00';
+  };
 
   // Ordenação cronológica das programações
   const programacoesOrdenadas = useMemo(() => {
@@ -220,7 +246,7 @@ export const ServicoDeCampoView: React.FC = () => {
     setItemParaEditar(null);
     setFormData({
       data: '',
-      horario: '09:00',
+      horario: horarioSaidaConfig,
       pontoEncontro: 'Salão do Reino',
       responsavel: '',
     });
@@ -231,7 +257,7 @@ export const ServicoDeCampoView: React.FC = () => {
     setItemParaEditar(item);
     setFormData({
       data: item.data,
-      horario: item.horario,
+      horario: item.horario || horarioSaidaConfig,
       pontoEncontro: item.pontoEncontro,
       responsavel: item.responsavel,
     });
@@ -248,7 +274,7 @@ export const ServicoDeCampoView: React.FC = () => {
     const item: CampoProgramacao = {
       id: itemParaEditar ? itemParaEditar.id : `prog-campo-${Date.now()}`,
       data: formData.data.trim(),
-      horario: formData.horario.trim() || '09:00',
+      horario: formData.horario.trim() || horarioSaidaConfig,
       pontoEncontro: formData.pontoEncontro.trim() || 'Salão do Reino',
       responsavel: formData.responsavel.trim(),
     };
@@ -428,7 +454,7 @@ export const ServicoDeCampoView: React.FC = () => {
               >
                 {programacoesOrdenadas.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.data} - {item.horario} ({item.pontoEncontro})
+                    {item.data} - {getHorarioDisplay(item)} ({item.pontoEncontro})
                   </option>
                 ))}
               </select>
@@ -500,7 +526,7 @@ export const ServicoDeCampoView: React.FC = () => {
                     Horário:
                   </span>
                   <span className="text-lg font-black text-slate-900 dark:text-white">
-                    {programacaoAtiva.horario}
+                    {getHorarioDisplay(programacaoAtiva)}
                   </span>
                 </div>
               </div>
@@ -605,7 +631,7 @@ export const ServicoDeCampoView: React.FC = () => {
                   type="text"
                   value={formData.horario}
                   onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
-                  placeholder="Ex: 09:00 ou 09:15"
+                  placeholder={`Ex: ${horarioSaidaConfig}`}
                   className="mt-1 w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-sky-500 focus:outline-none"
                   required
                 />
