@@ -378,6 +378,108 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguin
         meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
         escala: Array.isArray(parsed.escala) ? parsed.escala : [],
       });
+    } else if (modulo === 'campo') {
+      const promptText = `
+Você é um assistente especialista na leitura de escalas e programações congregacionais das Testemunhas de Jeová.
+O documento PDF anexado contém a programação do Serviço de Campo (saídas de campo para pregação, testemunho público e ministério).
+
+Analise o PDF completo e extraia todas as saídas de campo programadas:
+Para CADA saída/data encontrada:
+- id: Identificador único curto (ex: "campo-out-1", "campo-out-2")
+- data: Data no formato "DD/MM/YYYY" ou "DD/MM" (ex: "03/10/2026" ou "03/10")
+- horario: Horário da saída (ex: "08:00", "09:00", "09:15", "15:30"). Se não houver horário especificado na escala, use "08:00" como padrão.
+- pontoEncontro: Ponto de encontro ou local de saída (ex: "Salão do Reino", "Ponto dos Grupos", ou endereço citado). Se não informado, use "Salão do Reino".
+- responsavel: Nome do irmão dirigente ou responsável pela saída (ex: "Dhiego", "Marcelo", "Superintendente do Grupo").
+
+Extraia também uma lista dos nomes dos meses identificados no documento (ex: ["Outubro 2026"]).
+Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguinte estrutura:
+{
+  "meses": ["Outubro 2026"],
+  "programacao": [
+    ...
+  ]
+}
+`;
+
+      const parsed = await executePromptWithFallback(promptText);
+
+      return res.json({
+        success: true,
+        modulo: 'campo',
+        meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
+        programacao: Array.isArray(parsed.programacao) ? parsed.programacao : [],
+      });
+    } else if (modulo === 'discursos') {
+      const promptText = `
+Você é um assistente especialista na leitura de escalas de Discursos Públicos e Reuniões de Fim de Semana das Testemunhas de Jeová.
+O documento PDF anexado contém a programação de Discursos Bíblicos / Discursos Públicos da congregação.
+
+Analise o PDF completo e extraia todos os discursos bíblicos programados:
+Para CADA discurso/data:
+- id: Identificador único curto (ex: "disc-out-1", "disc-out-2")
+- mes: Nome do mês e ano (ex: "Outubro 2026" ou "Outubro")
+- data: Data no formato "DD/MM/YYYY" ou "DD/MM" (ex: "04/10/2026" ou "04/10")
+- tema: Título completo ou tema do discurso bíblico (ex: "Apeguem-se à sua integridade", "Onde encontrar ajuda em tempos de aflição?")
+- numeroTema: Número do tema ou esboço do discurso bíblico se constar (ex: "185", "34", ou "")
+- orador: Nome do orador designado (ex: "Carlos Alberto", "Orador Local", "Visitante")
+- congregacaoOrador: Congregação de origem do orador se informada (ex: "Vila Cisper", "Jardim Danfer", ou "")
+- presidente: Nome do irmão presidente da reunião se constar na escala (ou "")
+- leitor: Nome do irmão leitor de A Sentinela se constar na escala (ou "")
+- observacao: Observações se houver (ex: "Visita do Superintendente de Circuito", "Assembleia", ou "")
+
+Extraia também uma lista dos nomes dos meses identificados no documento (ex: ["Outubro 2026"]).
+Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguinte estrutura:
+{
+  "meses": ["Outubro 2026"],
+  "discursos": [
+    ...
+  ]
+}
+`;
+
+      const parsed = await executePromptWithFallback(promptText);
+
+      return res.json({
+        success: true,
+        modulo: 'discursos',
+        meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
+        discursos: Array.isArray(parsed.discursos) ? parsed.discursos : [],
+      });
+    } else if (modulo === 'limpeza') {
+      const promptText = `
+Você é um assistente especialista na leitura de escalas de limpeza e conservação de Salões do Reino das Testemunhas de Jeová.
+O documento PDF anexado contém a escala de grupos de limpeza congregacional.
+
+Analise o PDF completo e extraia todas as escalas de limpeza programadas:
+Para CADA escala/semana:
+- id: Identificador único curto (ex: "limp-out-1", "limp-out-2")
+- mes: Nome do mês (ex: "Outubro" ou "Outubro 2026")
+- mesChave: Nome do mês em minúsculo sem acento (ex: "outubro")
+- dias: Intervalo de dias ou dia da limpeza (ex: "7/11", "14/18", "04/08", "21/25" ou "04")
+- diasSemana: Dias das reuniões ou frequência (ex: "Quarta Feira e Domingo" ou "Quinta Feira e Domingo")
+- grupo: Nome ou número do grupo encarregado (ex: "GRUPO 1", "GRUPO 2", "GRUPO 3", "GRUPO 4")
+- responsaveis: Nomes dos irmãos responsáveis ou superintendentes do grupo (ex: "AIRTON E DHIEGO", "SAMUEL E GEOVANE")
+- observacao: Observações se houver (ex: "Assembleia", "Limpeza Geral", ou "")
+- ehEspecial: Booleano true se for limpeza geral especial, assembleia ou congresso
+
+Extraia também uma lista dos nomes dos meses identificados no documento (ex: ["Outubro 2026"]).
+Retorne EXCLUSIVAMENTE um objeto JSON válido, sem texto fora do JSON, na seguinte estrutura:
+{
+  "meses": ["Outubro 2026"],
+  "escalas": [
+    ...
+  ]
+}
+`;
+
+      const parsed = await executePromptWithFallback(promptText);
+
+      return res.json({
+        success: true,
+        modulo: 'limpeza',
+        meses: Array.isArray(parsed.meses) && parsed.meses.length > 0 ? parsed.meses : ['Mês Detectado'],
+        escalas: Array.isArray(parsed.escalas) ? parsed.escalas : [],
+      });
     } else {
       return res.status(400).json({ success: false, error: 'Módulo de importação não suportado para PDF.' });
     }

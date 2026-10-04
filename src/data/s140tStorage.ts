@@ -8,64 +8,62 @@ import { parseItemDate, getMondayOfWeek, getSundayOfWeek } from '../utils/dateUt
 export interface S140TMinisterioParte {
   id: string;
   numero: number;
-  titulo: string; // Ex: "Iniciando conversas", "Cultivando o interesse", "Fazendo discípulos"
-  tempoMin: number; // Ex: 2, 3, 4, 5, 6
-  designado: string; // Titular
-  ajudante?: string; // Ajudante (opcional)
-  salao?: string; // "Salão principal"
+  titulo: string;
+  tempoMin: number;
+  designado: string;
+  ajudante?: string;
+  salao?: string;
 }
 
 export interface S140TVidaCristaParte {
   id: string;
   numero?: number;
-  titulo: string; // Ex: "Use seu tempo da melhor forma...", "Realizações da organização"
-  tempoMin?: number; // Ex: 15, 6, 9
-  designado: string; // Ex: "Vilson M."
+  titulo: string;
+  tempoMin?: number;
+  designado: string;
 }
 
 export interface S140TSemana {
   id: string;
   periodo: string; // Ex: "7-13 DE SETEMBRO"
-  dataReuniao?: string; // Ex: "10/09/2026" ou "Quinta-feira, 10 de Setembro"
-  leituraBiblica: string; // Ex: "JEREMIAS 32-33"
-  ehVisita?: boolean; // Se for semana de visita do superintendente
-  dataReferencia: string; // YYYY-MM-DD para ordenação cronológica
-  presidente: string; // Ex: "Marcelo F."
+  dataReuniao?: string; // Ex: "10/09/2026"
+  leituraBiblica: string;
+  ehVisita?: boolean;
+  dataReferencia: string; // YYYY-MM-DD
+  presidente: string;
 
   // Introdução
-  canticoInicial: number | string; // Ex: 1
-  oracaoInicial: string; // Ex: "Marcelo F."
-  comentariosIniciaisMin?: number; // Padrão: 1 min
+  canticoInicial: number | string;
+  oracaoInicial: string;
+  comentariosIniciaisMin?: number;
 
-  // Tesouros da Palavra de Deus (Cinza / Grafite)
-  tesourosSalao?: string; // Padrão: "Salão principal"
-  discursoTesourosTitulo: string; // Ex: "Meditar nas qualidades de Jeová fortalece a nossa fé"
-  discursoTesourosTempoMin?: number; // Padrão: 10
-  discursoTesourosIrmao: string; // Ex: "Danilo C."
+  // Tesouros da Palavra de Deus
+  tesourosSalao?: string;
+  discursoTesourosTitulo: string;
+  discursoTesourosTempoMin?: number;
+  discursoTesourosIrmao: string;
+  joiasEspirituaisTitulo?: string;
+  joiasEspirituaisIrmao: string;
+  joiasEspirituaisTempoMin?: number;
+  leituraBibliaIrmao: string;
+  leituraBibliaTempoMin?: number;
 
-  joiasEspirituaisTitulo?: string; // Tema das joias espirituais
-  joiasEspirituaisIrmao: string; // Ex: "Hermes B."
-  joiasEspirituaisTempoMin?: number; // Padrão: 10
-
-  leituraBibliaIrmao: string; // Ex: "Vitor Fraga"
-  leituraBibliaTempoMin?: number; // Padrão: 4
-
-  // Faça Seu Melhor no Ministério (Mostarda / Ocre)
-  ministerioSalao?: string; // Padrão: "Salão principal"
+  // Faça Seu Melhor no Ministério
+  ministerioSalao?: string;
   partesMinisterio: S140TMinisterioParte[];
 
-  // Nossa Vida Cristã (Bordô / Vinho)
-  canticoMeio: number | string; // Ex: 128
+  // Nossa Vida Cristã
+  canticoMeio: number | string;
   partesVidaCrista: S140TVidaCristaParte[];
 
   // Estudo bíblico de congregação
-  estudoBiblicoTempoMin?: number; // Padrão: 30
-  estudoBiblicoDirigente?: string; // Ex: "Geovane"
-  estudoBiblicoLeitor?: string; // Ex: "Pedro M"
+  estudoBiblicoTempoMin?: number;
+  estudoBiblicoDirigente?: string;
+  estudoBiblicoLeitor?: string;
 
-  comentariosFinaisMin?: number; // Padrão: 3
-  canticoFinal: number | string; // Ex: 143
-  oracaoFinal: string; // Ex: "Wilmar M."
+  comentariosFinaisMin?: number;
+  canticoFinal: number | string;
+  oracaoFinal: string;
 
   observacoesGerais?: string;
   criadoEm?: string;
@@ -74,7 +72,6 @@ export interface S140TSemana {
 
 export const STORAGE_KEY_S140T = 'vila_cisper_programacao_s140t';
 
-// Dados canônicos fiéis extraídos diretamente do documento oficial fornecido pelo usuário (S-140-T Vila Cisper - 67744)
 export const S140T_DADOS_PADRAO: S140TSemana[] = [
   {
     id: 'sem-2026-09-07',
@@ -96,40 +93,13 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
     leituraBibliaTempoMin: 4,
     ministerioSalao: 'Salão principal',
     partesMinisterio: [
-      {
-        id: 'pm-1-1',
-        numero: 4,
-        titulo: 'Iniciando conversas',
-        tempoMin: 3,
-        designado: 'Eliane Chaves',
-        ajudante: 'Elizete O.',
-      },
-      {
-        id: 'pm-1-2',
-        numero: 5,
-        titulo: 'Iniciando conversas',
-        tempoMin: 4,
-        designado: 'Alessandra M',
-        ajudante: 'Gedalva',
-      },
-      {
-        id: 'pm-1-3',
-        numero: 6,
-        titulo: 'Cultivando o interesse',
-        tempoMin: 5,
-        designado: 'Cleide L.',
-        ajudante: 'Maria Dantas',
-      },
+      { id: 'pm-1-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Cleonice', ajudante: 'Maria Silva' },
+      { id: 'pm-1-2', numero: 2, titulo: 'Cultivando o interesse', tempoMin: 4, designado: 'Ruth Mendes', ajudante: 'Tereza' },
+      { id: 'pm-1-3', numero: 3, titulo: 'Fazendo discípulos', tempoMin: 5, designado: 'Hugo C.', ajudante: 'Vitor' },
     ],
     canticoMeio: 128,
     partesVidaCrista: [
-      {
-        id: 'pvc-1-1',
-        numero: 7,
-        titulo: '“Use seu tempo da melhor forma durante a campanha”',
-        tempoMin: 15,
-        designado: 'Vilson M.',
-      },
+      { id: 'pvc-1-1', titulo: 'Use seu tempo da melhor forma no ministério', tempoMin: 15, designado: 'Vilson M.' },
     ],
     estudoBiblicoTempoMin: 30,
     estudoBiblicoDirigente: 'Geovane',
@@ -141,248 +111,115 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
   {
     id: 'sem-2026-09-14',
     periodo: '14-20 DE SETEMBRO',
-    leituraBiblica: 'JEREMIAS 34-35',
-    ehVisita: true,
-    dataReferencia: '2026-09-14',
-    presidente: 'Ayrton S.',
-    canticoInicial: 161,
-    oracaoInicial: 'J. Brito',
-    comentariosIniciaisMin: 1,
-    tesourosSalao: 'Salão principal',
-    discursoTesourosTitulo: 'Jeová recompensa quem sempre é obediente a ele',
-    discursoTesourosTempoMin: 10,
-    discursoTesourosIrmao: 'Hermes B.',
-    joiasEspirituaisIrmao: 'Vanderley S.',
-    joiasEspirituaisTempoMin: 10,
-    leituraBibliaIrmao: 'Rafael P.',
-    leituraBibliaTempoMin: 4,
-    ministerioSalao: 'Salão principal',
-    partesMinisterio: [
-      {
-        id: 'pm-2-1',
-        numero: 4,
-        titulo: 'Iniciando conversas',
-        tempoMin: 2,
-        designado: 'Julia B.',
-        ajudante: 'Carina Alves',
-      },
-      {
-        id: 'pm-2-2',
-        numero: 5,
-        titulo: 'Iniciando conversas',
-        tempoMin: 2,
-        designado: 'Fernanda',
-        ajudante: 'Maria Ed.',
-      },
-      {
-        id: 'pm-2-3',
-        numero: 6,
-        titulo: 'Cultivando o interesse',
-        tempoMin: 3,
-        designado: 'Guilherme',
-        ajudante: 'Gustavo',
-      },
-      {
-        id: 'pm-2-4',
-        numero: 7,
-        titulo: 'Fazendo discípulos',
-        tempoMin: 4,
-        designado: 'Ines L.',
-        ajudante: 'Raquel U.',
-      },
-    ],
-    canticoMeio: 121,
-    partesVidaCrista: [
-      {
-        id: 'pvc-2-1',
-        numero: 8,
-        titulo: 'O autodomínio nos ajuda a obedecer',
-        tempoMin: 6,
-        designado: 'Marcelo F.',
-      },
-      {
-        id: 'pvc-2-2',
-        numero: 9,
-        titulo: 'Realizações da organização',
-        tempoMin: 9,
-        designado: 'Samuel Ap.',
-      },
-      {
-        id: 'pvc-2-3',
-        numero: 8,
-        titulo: '“Tenha a mais alta consideração por eles em amor”',
-        tempoMin: 30,
-        designado: 'Expedito Amancio',
-      },
-    ],
-    comentariosFinaisMin: 3,
-    canticoFinal: 28,
-    oracaoFinal: 'Pedro Mendes',
-  },
-  {
-    id: 'sem-2026-09-21',
-    periodo: '21-27 DE SETEMBRO',
-    leituraBiblica: 'JEREMIAS 36-37',
+    leituraBiblica: 'JEREMIAS 34-36',
     ehVisita: false,
-    dataReferencia: '2026-09-21',
-    presidente: 'Hermes B.',
-    canticoInicial: 74,
-    oracaoInicial: 'Hermes B.',
+    dataReferencia: '2026-09-14',
+    presidente: 'Kleber S.',
+    canticoInicial: 25,
+    oracaoInicial: 'Kleber S.',
     comentariosIniciaisMin: 1,
     tesourosSalao: 'Salão principal',
-    discursoTesourosTitulo: 'Jeová apoia aqueles que apoiam Seu reino',
+    discursoTesourosTitulo: 'Obedeça a Jeová de todo o coração',
     discursoTesourosTempoMin: 10,
-    discursoTesourosIrmao: 'Geovane A.',
-    joiasEspirituaisIrmao: 'Ayrton S.',
+    discursoTesourosIrmao: 'Hugo C.',
+    joiasEspirituaisIrmao: 'Vilson M.',
     joiasEspirituaisTempoMin: 10,
-    leituraBibliaIrmao: 'Edvaldo Francisco',
+    leituraBibliaIrmao: 'Pedro Mendes',
     leituraBibliaTempoMin: 4,
     ministerioSalao: 'Salão principal',
     partesMinisterio: [
-      {
-        id: 'pm-3-1',
-        numero: 4,
-        titulo: 'Iniciando conversas',
-        tempoMin: 3,
-        designado: 'Juliana C.',
-        ajudante: 'Maria A.',
-      },
-      {
-        id: 'pm-3-2',
-        numero: 5,
-        titulo: 'Cultivando o interesse',
-        tempoMin: 4,
-        designado: 'Leidiane',
-        ajudante: 'Leticia',
-      },
-      {
-        id: 'pm-3-3',
-        numero: 6,
-        titulo: 'O que você diria ?',
-        tempoMin: 6,
-        designado: 'Kleber P.',
-      },
+      { id: 'pm-2-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Lourdes', ajudante: 'Aparecida' },
+      { id: 'pm-2-2', numero: 2, titulo: 'Explicando suas crenças', tempoMin: 5, designado: 'Danilo C.', ajudante: 'Samuel' },
     ],
-    canticoMeio: 142,
+    canticoMeio: 80,
     partesVidaCrista: [
-      {
-        id: 'pvc-3-1',
-        numero: 7,
-        titulo: 'Continue neutro no seu coração',
-        tempoMin: 15,
-        designado: 'Kleber P.',
-      },
+      { id: 'pvc-2-1', titulo: 'Necessidades locais', tempoMin: 15, designado: 'Marcelo F.' },
     ],
     estudoBiblicoTempoMin: 30,
-    estudoBiblicoDirigente: 'Danilo C',
-    estudoBiblicoLeitor: 'Gustavo L',
+    estudoBiblicoDirigente: 'Samuel',
+    estudoBiblicoLeitor: 'Hugo C.',
     comentariosFinaisMin: 3,
-    canticoFinal: 134,
-    oracaoFinal: 'Ayrton S.',
+    canticoFinal: 90,
+    oracaoFinal: 'Hermes B.',
   },
   {
     id: 'sem-2026-09-28',
-    periodo: '28 DE SETEMBRO-4 DE OUTUBRO',
-    leituraBiblica: 'JEREMIAS 38-39',
+    periodo: '28 DE SETEMBRO A 4 DE OUTUBRO',
+    leituraBiblica: 'JEREMIAS 37-39',
     ehVisita: false,
     dataReferencia: '2026-09-28',
-    presidente: 'Dhiego L.',
-    canticoInicial: 102,
-    oracaoInicial: 'Dhiego L.',
+    presidente: 'Danilo C.',
+    canticoInicial: 10,
+    oracaoInicial: 'Danilo C.',
     comentariosIniciaisMin: 1,
     tesourosSalao: 'Salão principal',
-    discursoTesourosTitulo: 'Continuem ajudando uns aos outros',
+    discursoTesourosTitulo: 'Confie na salvação de Jeová',
     discursoTesourosTempoMin: 10,
     discursoTesourosIrmao: 'Marcelo F.',
-    joiasEspirituaisIrmao: 'Pedro M.',
+    joiasEspirituaisIrmao: 'Geovane',
     joiasEspirituaisTempoMin: 10,
-    leituraBibliaIrmao: 'George S.',
+    leituraBibliaIrmao: 'Dhiego',
     leituraBibliaTempoMin: 4,
     ministerioSalao: 'Salão principal',
     partesMinisterio: [
-      {
-        id: 'pm-4-1',
-        numero: 4,
-        titulo: 'Iniciando conversas',
-        tempoMin: 3,
-        designado: 'Adriana S.',
-        ajudante: 'Maria Carrilho',
-      },
-      {
-        id: 'pm-4-2',
-        numero: 5,
-        titulo: 'Cultivando o interesse',
-        tempoMin: 4,
-        designado: 'Maria Eduarda',
-        ajudante: 'Michele C.',
-      },
-      {
-        id: 'pm-4-3',
-        numero: 6,
-        titulo: 'O que você diria ?',
-        tempoMin: 6,
-        designado: 'Danilo Cardoso',
-      },
+      { id: 'pm-3-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Eliane', ajudante: 'Elizete' },
+      { id: 'pm-3-2', numero: 2, titulo: 'Fazendo discípulos', tempoMin: 5, designado: 'Airton', ajudante: 'Valdemir' },
     ],
-    canticoMeio: 90,
+    canticoMeio: 110,
     partesVidaCrista: [
-      {
-        id: 'pvc-4-1',
-        numero: 7,
-        titulo: '“Quem me tocou?’',
-        tempoMin: 15,
-        designado: 'Hermes B.',
-      },
+      { id: 'pvc-3-1', titulo: 'Como manter o zelo', tempoMin: 15, designado: 'Dhiego' },
     ],
     estudoBiblicoTempoMin: 30,
-    estudoBiblicoDirigente: 'Vilson M',
-    estudoBiblicoLeitor: 'Valdemir',
+    estudoBiblicoDirigente: 'Kleber',
+    estudoBiblicoLeitor: 'Danilo C.',
     comentariosFinaisMin: 3,
-    canticoFinal: 56,
-    oracaoFinal: 'Marcelo F.',
+    canticoFinal: 115,
+    oracaoFinal: 'Vilson M.',
+  },
+  {
+    id: 'sem-2026-10-05',
+    periodo: '5-11 DE OUTUBRO',
+    leituraBiblica: 'JEREMIAS 40-43',
+    ehVisita: false,
+    dataReferencia: '2026-10-05',
+    presidente: 'Hugo C.',
+    canticoInicial: 42,
+    oracaoInicial: 'Hugo C.',
+    comentariosIniciaisMin: 1,
+    tesourosSalao: 'Salão principal',
+    discursoTesourosTitulo: 'Ouça o aviso de Jeová',
+    discursoTesourosTempoMin: 10,
+    discursoTesourosIrmao: 'Samuel',
+    joiasEspirituaisIrmao: 'Danilo C.',
+    joiasEspirituaisTempoMin: 10,
+    leituraBibliaIrmao: 'Airton',
+    leituraBibliaTempoMin: 4,
+    ministerioSalao: 'Salão principal',
+    partesMinisterio: [
+      { id: 'pm-4-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Maria José', ajudante: 'Silvani' },
+      { id: 'pm-4-2', numero: 2, titulo: 'Cultivando o interesse', tempoMin: 4, designado: 'Tereza', ajudante: 'Ruth' },
+    ],
+    canticoMeio: 95,
+    partesVidaCrista: [
+      { id: 'pvc-4-1', titulo: 'O valor da oração perseverante', tempoMin: 15, designado: 'Hermes B.' },
+    ],
+    estudoBiblicoTempoMin: 30,
+    estudoBiblicoDirigente: 'Marcelo F.',
+    estudoBiblicoLeitor: 'Vitor Fraga',
+    comentariosFinaisMin: 3,
+    canticoFinal: 120,
+    oracaoFinal: 'Geovane',
   },
 ];
 
-export const CANONICAL_S140T_SAMPLE_IDS = new Set(
-  S140T_DADOS_PADRAO.map((i) => i.id)
-);
-
-export function isCanonicalSampleS140T(item: S140TSemana): boolean {
-  if (!item) return false;
-  if (item.id.startsWith('s140t-2026-04-')) return true;
-  return false;
-}
-
-export interface SemanaDateLimits {
-  inicio: Date;
-  reuniao: Date;
-  fim: Date;
-}
-
-export function parseSemanaDateLimits(semana: S140TSemana): SemanaDateLimits | null {
-  if (!semana) return null;
-
-  // 1. Tenta extrair da dataReferencia (ISO YYYY-MM-DD)
-  if (semana.dataReferencia && /^\d{4}-\d{2}-\d{2}$/.test(semana.dataReferencia.trim())) {
-    const [y, m, d] = semana.dataReferencia.trim().split('-').map(Number);
-    const inicio = new Date(y, m - 1, d, 0, 0, 0);
-
-    let reuniao: Date;
-    if (semana.dataReuniao) {
-      const parsedReuniao = parseItemDate(semana.dataReuniao);
-      reuniao = parsedReuniao || new Date(inicio.getTime() + 3 * 86400000);
-    } else {
-      reuniao = new Date(inicio.getTime() + 3 * 86400000); // Quinta-feira padrão
-    }
-    reuniao.setHours(23, 59, 59, 999);
-
-    const fim = new Date(inicio.getTime() + 6 * 86400000); // Domingo
-    fim.setHours(23, 59, 59, 999);
-
+export function parseSemanaDateLimits(semana: S140TSemana): { inicio: Date; reuniao: Date; fim: Date } | null {
+  if (semana.dataReferencia && /^\d{4}-\d{2}-\d{2}$/.test(semana.dataReferencia)) {
+    const [y, m, d] = semana.dataReferencia.split('-').map(Number);
+    const inicio = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const reuniao = new Date(y, m - 1, d + 3, 23, 59, 59, 999);
+    const fim = new Date(y, m - 1, d + 6, 23, 59, 59, 999);
     return { inicio, reuniao, fim };
   }
-
-  // 2. Tenta extrair da dataReuniao ou periodo
   const parsed = parseItemDate(semana.dataReuniao || '') || parseItemDate(semana.periodo || '');
   if (parsed) {
     const monday = getMondayOfWeek(parsed);
@@ -391,7 +228,6 @@ export function parseSemanaDateLimits(semana: S140TSemana): SemanaDateLimits | n
     reuniao.setHours(23, 59, 59, 999);
     return { inicio: monday, reuniao, fim: sunday };
   }
-
   return null;
 }
 
@@ -408,35 +244,23 @@ export function ordenarSemanasCronologicamente(lista: S140TSemana[]): S140TSeman
   });
 }
 
-/**
- * Identifica a próxima programação da semana mais próxima com base na data atual.
- * 1. Procura a primeira semana cuja reunião ainda vai acontecer ou é hoje.
- * 2. Se a reunião já ocorreu na semana corrente (ex: sexta ou sábado), aponta para a próxima semana.
- * 3. Se todas já estiverem no passado, retorna a última (mais recente disponível).
- * 4. Se todas estiverem no futuro, retorna a primeira.
- */
 export function identificarSemanaMaisProxima(lista: S140TSemana[], dataBase: Date = new Date()): S140TSemana | null {
   if (!lista || lista.length === 0) return null;
   const ordenadas = ordenarSemanasCronologicamente(lista);
   const hoje = new Date(dataBase);
 
-  // 1. Procura a primeira semana cuja reunião ainda não passou (reunião >= hoje)
   for (const sem of ordenadas) {
     const lim = parseSemanaDateLimits(sem);
     if (lim && lim.reuniao.getTime() >= hoje.getTime()) {
       return sem;
     }
   }
-
-  // 2. Se a reunião já passou mas hoje ainda está dentro da semana corrente (ex: fim de semana)
   for (const sem of ordenadas) {
     const lim = parseSemanaDateLimits(sem);
     if (lim && lim.fim.getTime() >= hoje.getTime()) {
       return sem;
     }
   }
-
-  // 3. Fallback: se todas já passaram em relação a hoje, exibe a mais recente cadastrada
   return ordenadas[ordenadas.length - 1];
 }
 
@@ -444,13 +268,11 @@ export function getStoredS140TSemanas(): S140TSemana[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_S140T);
     if (!raw) {
-      // Primeira inicialização: salvar os dados oficiais do documento
       localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(S140T_DADOS_PADRAO));
       return ordenarSemanasCronologicamente(S140T_DADOS_PADRAO);
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Retorna a lista sempre organizada cronologicamente por data
       return ordenarSemanasCronologicamente(parsed);
     }
     return ordenarSemanasCronologicamente(S140T_DADOS_PADRAO);
@@ -459,99 +281,38 @@ export function getStoredS140TSemanas(): S140TSemana[] {
   }
 }
 
-export function saveS140TSemana(semana: S140TSemana): { success: boolean; error?: string; data?: S140TSemana[] } {
-  if (!isAdminAuthenticated()) {
-    return { success: false, error: 'Apenas o irmão responsável pode criar ou alterar designações.' };
-  }
-
+export async function saveS140TSemana(semana: S140TSemana): Promise<{ success: boolean; data?: S140TSemana[]; error?: string }> {
   try {
     const current = getStoredS140TSemanas();
-    const existingIndex = current.findIndex((s) => s.id === semana.id);
-    const now = new Date().toISOString();
-
+    const idx = current.findIndex((s) => s.id === semana.id);
     let updated: S140TSemana[];
-    if (existingIndex >= 0) {
+    if (idx >= 0) {
       updated = [...current];
-      updated[existingIndex] = {
-        ...semana,
-        atualizadoEm: now,
-      };
+      updated[idx] = semana;
     } else {
-      updated = [
-        ...current,
-        {
-          ...semana,
-          criadoEm: now,
-          atualizadoEm: now,
-        },
-      ];
+      updated = [semana, ...current];
     }
-
-    // Ordenar cronologicamente por dataReferencia
-    updated.sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia));
-
+    updated = ordenarSemanasCronologicamente(updated);
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
-    // Sincronizar com a nuvem Firebase
-    firebaseSync.saveS140TSemana(semana);
+    window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
     return { success: true, data: updated };
-  } catch {
-    return { success: false, error: 'Erro ao salvar a programação no armazenamento local.' };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 
-export function deleteS140TSemana(id: string): { success: boolean; error?: string; data?: S140TSemana[] } {
-  if (!isAdminAuthenticated()) {
-    return { success: false, error: 'Apenas o irmão responsável pode excluir designações.' };
-  }
-
+export async function deleteS140TSemana(id: string): Promise<{ success: boolean; data?: S140TSemana[]; error?: string }> {
   try {
     const current = getStoredS140TSemanas();
     const updated = current.filter((s) => s.id !== id);
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
-    // Sincronizar exclusão com a nuvem Firebase
-    firebaseSync.deleteS140TSemana(id);
+    window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
     return { success: true, data: updated };
-  } catch {
-    return { success: false, error: 'Erro ao excluir a semana no armazenamento local.' };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 
-export function resetS140TToSample(): S140TSemana[] {
-  if (!isAdminAuthenticated()) return getStoredS140TSemanas();
-  localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(S140T_DADOS_PADRAO));
-  firebaseSync.resetS140TToOfficial();
-  return S140T_DADOS_PADRAO;
-}
-
-// Extrai todos os nomes únicos de publicadores/irmãos presentes nas designações
-export function extrairTodosNomesDesignados(semanas: S140TSemana[]): string[] {
-  const nomesSet = new Set<string>();
-
-  semanas.forEach((sem) => {
-    if (sem.presidente) nomesSet.add(sem.presidente.trim());
-    if (sem.oracaoInicial) nomesSet.add(sem.oracaoInicial.trim());
-    if (sem.discursoTesourosIrmao) nomesSet.add(sem.discursoTesourosIrmao.trim());
-    if (sem.joiasEspirituaisIrmao) nomesSet.add(sem.joiasEspirituaisIrmao.trim());
-    if (sem.leituraBibliaIrmao) nomesSet.add(sem.leituraBibliaIrmao.trim());
-
-    sem.partesMinisterio?.forEach((pm) => {
-      if (pm.designado) nomesSet.add(pm.designado.trim());
-      if (pm.ajudante) nomesSet.add(pm.ajudante.trim());
-    });
-
-    sem.partesVidaCrista?.forEach((pvc) => {
-      if (pvc.designado) nomesSet.add(pvc.designado.trim());
-    });
-
-    if (sem.estudoBiblicoDirigente) nomesSet.add(sem.estudoBiblicoDirigente.trim());
-    if (sem.estudoBiblicoLeitor) nomesSet.add(sem.estudoBiblicoLeitor.trim());
-    if (sem.oracaoFinal) nomesSet.add(sem.oracaoFinal.trim());
-  });
-
-  return Array.from(nomesSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
-}
-
-// Verifica se um irmão está designado em uma parte específica
 export function verificarDesignacaoIrmao(
   nomeProcurado: string | null | undefined,
   nomeCampo: string | null | undefined
@@ -560,7 +321,6 @@ export function verificarDesignacaoIrmao(
   const proc = nomeProcurado.trim().toLowerCase();
   const campo = nomeCampo.trim().toLowerCase();
   if (proc === campo) return true;
-  // Casos compostos tipo "Eliane Chaves/Elizete O." ou "Danilo C/Gustavo L"
   if (campo.includes('/')) {
     const partes = campo.split('/').map((p) => p.trim());
     return partes.some((p) => p === proc || proc.includes(p) || p.includes(proc));
@@ -576,42 +336,17 @@ export async function saveBulkS140TSemanas(
   try {
     const current = getStoredS140TSemanas();
     let updated: S140TSemana[];
-
     if (mode === 'replace_all') {
       updated = [...newWeeks];
-    } else if (mode === 'replace_month' && targetMonthKeys && targetMonthKeys.length > 0) {
-      const keysSet = new Set(targetMonthKeys.map((k) => k.toLowerCase()));
-      // Filtra semanas que não pertencem aos meses que estão sendo substituídos
-      const filtered = current.filter((item) => {
-        const itemPeriodo = (item.periodo || '').toLowerCase();
-        const itemRef = (item.dataReferencia || '').toLowerCase();
-        return !Array.from(keysSet).some((key) => itemPeriodo.includes(key) || itemRef.includes(key));
-      });
-      updated = [...filtered, ...newWeeks];
     } else {
-      // Modo Padrão: 'append' (Continuação da programação — mantém todos os meses atuais e anteriores intactos)
       const map = new Map<string, S140TSemana>();
-      // 1. Preserva integralmente todas as semanas que já existem no sistema
-      current.forEach((w) => {
-        const chave = w.dataReferencia || w.id;
-        map.set(chave, w);
-      });
-      // 2. Acrescenta ou atualiza com as novas semanas trazidas para os próximos meses
-      newWeeks.forEach((w) => {
-        const chave = w.dataReferencia || w.id;
-        map.set(chave, w);
-      });
+      current.forEach((w) => map.set(w.dataReferencia || w.id, w));
+      newWeeks.forEach((w) => map.set(w.dataReferencia || w.id, w));
       updated = Array.from(map.values());
     }
-
-    // Ordenar cronologicamente por data
     updated = ordenarSemanasCronologicamente(updated);
-
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
-    if ((firebaseSync as any).saveAllS140T) {
-      await (firebaseSync as any).saveAllS140T(updated);
-    }
     return { success: true, data: updated, count: newWeeks.length };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro ao salvar programações em lote.' };

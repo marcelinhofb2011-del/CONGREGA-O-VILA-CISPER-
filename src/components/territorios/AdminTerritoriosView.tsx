@@ -120,7 +120,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
   const territoriosDisponiveis = useMemo(() => {
     return territorios
       .filter((t) => isStatusDisponivel(t.status))
-      .sort((a, b) => a.numero - b.numero);
+      .sort((a, b) => Number(a.numero) - Number(b.numero));
   }, [territorios]);
 
   // Solicitações que ainda aguardam atendimento do responsável
@@ -157,7 +157,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
               t.solicitacao_id === designandoSolicitacao.id ||
               (isStatusSolicitado(t.status) && t.solicitado_por === designandoSolicitacao.nome_publicador)))
       )
-      .sort((a, b) => a.numero - b.numero);
+      .sort((a, b) => Number(a.numero) - Number(b.numero));
   }, [territorios, designandoSolicitacao]);
 
   // Território selecionado no modal de designação para exibição dos detalhes
@@ -183,7 +183,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
 
     const ativos = filtrados
       .filter((t) => isStatusDisponivel(t.status) || isStatusSolicitado(t.status) || isStatusDesignado(t.status))
-      .sort((a, b) => a.numero - b.numero);
+      .sort((a, b) => Number(a.numero) - Number(b.numero));
 
     const concluidosEstornados = filtrados
       .filter((t) => isStatusConcluido(t.status) || isStatusEstornado(t.status))

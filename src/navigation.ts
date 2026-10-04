@@ -1,84 +1,46 @@
 import {
   Home,
-  CalendarCheck,
+  Calendar,
+  Users,
   BookOpen,
   Speech,
-  Sparkles,
-  Users,
-  Map,
   Compass,
-  Lock,
+  Sparkles,
+  Map,
+  Bell,
+  Settings,
+  Shield,
+  FileSpreadsheet,
+  BarChart3,
+  UserCheck,
 } from 'lucide-react';
 import { ScreenId } from './types';
 
 export interface NavItem {
   id: ScreenId;
   label: string;
-  icon: typeof Home;
+  icon: any;
+  departamento?: string;
+  badge?: number;
   description?: string;
 }
 
-/**
- * Abas de Acesso Principais da Congregação Vila Cisper:
- * 1. Designação
- * 2. Vida e ministério
- * 3. Discurso público
- * 4. Grupo de Limpeza
- * 5. Assistência
- * 6. Território
- */
-export const ABAS_PRINCIPAIS: NavItem[] = [
-  {
-    id: 'designacoes',
-    label: 'Designação',
-    icon: CalendarCheck,
-  },
-  {
-    id: 'vida-e-ministerio',
-    label: 'Vida e ministério',
-    icon: BookOpen,
-  },
-  {
-    id: 'discurso-publico',
-    label: 'Discurso público',
-    icon: Speech,
-  },
-  {
-    id: 'limpeza',
-    label: 'Grupo de Limpeza',
-    icon: Sparkles,
-  },
-  {
-    id: 'assistencia',
-    label: 'Assistência',
-    icon: Users,
-  },
-  {
-    id: 'territorios',
-    label: 'Território',
-    icon: Map,
-  },
-];
-
 export const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'inicio',
-    label: 'Início',
-    icon: Home,
-  },
-  ...ABAS_PRINCIPAIS,
-  {
-    id: 'servico-de-campo',
-    label: 'Serviço de Campo',
-    icon: Compass,
-  },
+  { id: 'inicio', label: 'Início', icon: Home },
+  { id: 'programacao', label: 'Programação', icon: Calendar },
+  { id: 'designacoes', label: 'Designações', icon: Users },
+  { id: 'vida-e-ministerio', label: 'Vida e Ministério', icon: BookOpen },
+  { id: 'discurso-publico', label: 'Discurso Público', icon: Speech },
+  { id: 'servico-de-campo', label: 'Serviço de Campo', icon: Compass },
+  { id: 'limpeza', label: 'Limpeza', icon: Sparkles },
+  { id: 'territorios', label: 'Territórios', icon: Map },
+  { id: 'avisos', label: 'Avisos', icon: Bell },
+  { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
 
-export const MENU_PRINCIPAL = NAV_ITEMS;
-
-// Acesso restrito aos irmãos responsáveis
-export const ADMIN_NAV_ITEM = {
-  id: 'administracao' as ScreenId,
-  label: 'Área dos Responsáveis',
-  icon: Lock,
-};
+export const ADMIN_NAV_ITEMS: NavItem[] = [
+  { id: 'administracao', label: 'Painel Admin', icon: Shield },
+  { id: 'secretario', label: 'Secretário', icon: FileSpreadsheet },
+  { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
+  { id: 'assistencia', label: 'Assistência', icon: UserCheck },
+];

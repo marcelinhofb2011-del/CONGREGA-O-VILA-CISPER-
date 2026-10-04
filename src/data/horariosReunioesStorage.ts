@@ -114,7 +114,7 @@ export function getHorarioSaidaDeCampo(): string {
 /**
  * Salva as configurações de horários das reuniões e despacha evento para sincronização no app
  */
-export function saveHorariosReunioes(config: HorariosReunioesConfig): void {
+export function saveHorariosReunioes(config: HorariosReunioesConfig): { success: boolean; data?: HorariosReunioesConfig; error?: string } {
   try {
     const configCompleta: HorariosReunioesConfig = {
       meioDeSemana: config.meioDeSemana,
@@ -128,14 +128,20 @@ export function saveHorariosReunioes(config: HorariosReunioesConfig): void {
     window.dispatchEvent(
       new CustomEvent('horarios-reunioes-updated', { detail: configCompleta })
     );
+    window.dispatchEvent(
+      new CustomEvent(STORAGE_KEY_HORARIOS_REUNIOES, { detail: configCompleta })
+    );
 
     // Sincroniza de forma assíncrona com o Firestore
     const docRef = doc(db, FIRESTORE_HORARIOS_COLLECTION, FIRESTORE_HORARIOS_DOC_ID);
     setDoc(docRef, { ...configCompleta, atualizadoEm: new Date().toISOString() }).catch((err) => {
       console.warn('Erro ao sincronizar horários com Firestore:', err);
     });
-  } catch (e) {
+
+    return { success: true, data: configCompleta };
+  } catch (e: any) {
     console.warn('Erro ao salvar horários das reuniões:', e);
+    return { success: false, error: e?.message || 'Erro ao salvar horários' };
   }
 }
 

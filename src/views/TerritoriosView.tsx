@@ -1,17 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Lock,
-  Unlock,
-  KeyRound,
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  X,
-  Bell,
-  BellRing,
-  BellOff,
-  Send,
-} from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Map, Search, Shield, CheckCircle, Clock, Lock, UserCheck, LayoutGrid, ArrowLeft } from 'lucide-react';
 import {
   Territorio,
   SolicitacaoTerritorio,
@@ -21,579 +9,338 @@ import {
   getStoredSolicitacoes,
   getStoredTransferencias,
   getStoredHistorico,
-  verifyAdminPassword,
+  saveTerritorio,
   isAdminAuthenticated,
+  verifyAdminPassword,
   setAdminAuthenticated,
-  updateAdminPassword,
 } from '../data/territoriosStorage';
-import { firebaseSync } from '../data/firebaseSyncService';
-import {
-  isPushNotificationSupported,
-  isDevicePushEnabled,
-  registerResponsiblePushDevice,
-  disableResponsiblePushDevice,
-  sendTestNotificationToResponsible,
-} from '../lib/pushNotificationService';
-import { PublicadorTerritoriosView } from '../components/territorios/PublicadorTerritoriosView';
 import { AdminTerritoriosView } from '../components/territorios/AdminTerritoriosView';
+import { PublicadorTerritoriosView } from '../components/territorios/PublicadorTerritoriosView';
 
-export const TerritoriosView: React.FC = () => {
-  // Autenticação administrativa (Área do Responsável)
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
-  const [passwordInput, setPasswordInput] = useState<string>('');
-  const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string>('');
+interface TerritoriosViewProps {
+  isAdmin: boolean;
+  onAdminLoginSuccess?: () => void;
+}
 
-  // Estados dos dados compartilhados
+export const TerritoriosView: React.FC<TerritoriosViewProps> = ({
+  isAdmin,
+  onAdminLoginSuccess,
+}) => {
   const [territorios, setTerritorios] = useState<Territorio[]>([]);
   const [solicitacoes, setSolicitacoes] = useState<SolicitacaoTerritorio[]>([]);
   const [transferencias, setTransferencias] = useState<TransferenciaTerritorio[]>([]);
   const [historico, setHistorico] = useState<HistoricoTerritorio[]>([]);
+  const [viewMode, setViewMode] = useState<'publicador' | 'todos' | 'admin'>(
+    isAdmin ? 'admin' : 'publicador'
+  );
 
-  // Notificação temporária
-  const [notification, setNotification] = useState<string>('');
+  const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<string>('todos');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Estados de Notificações Push (Área do Responsável)
-  const [pushSupported, setPushSupported] = useState<boolean>(false);
-  const [pushEnabled, setPushEnabled] = useState<boolean>(false);
-  const [isActivatingPush, setIsActivatingPush] = useState<boolean>(false);
-  const [isSendingTestPush, setIsSendingTestPush] = useState<boolean>(false);
-  const [pushDismissed, setPushDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('vila_cisper_push_dismissed') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  // Modal para alteração de senha administrativa
-  const [showTrocarSenhaModal, setShowTrocarSenhaModal] = useState<boolean>(false);
-  const [senhaAtualInput, setSenhaAtualInput] = useState<string>('');
-  const [novaSenhaInput, setNovaSenhaInput] = useState<string>('');
-  const [trocaSenhaError, setTrocaSenhaError] = useState<string>('');
-
-  // Carregar dados
-  const recarregarDados = () => {
+  const carregarDados = useCallback(() => {
     setTerritorios(getStoredTerritorios());
     setSolicitacoes(getStoredSolicitacoes());
     setTransferencias(getStoredTransferencias());
     setHistorico(getStoredHistorico());
-  };
-
-  useEffect(() => {
-    setIsAdmin(isAdminAuthenticated());
-    recarregarDados();
-
-    // Inscrição direta nos listeners de tempo real do Firebase (fonte única da verdade)
-    const unsubTer = firebaseSync.onTerritoriosChange((lista) => {
-      setTerritorios(lista);
-    });
-
-    const unsubSol = firebaseSync.onSolicitacoesChange((lista) => {
-      setSolicitacoes(lista);
-    });
-
-    const unsubTr = firebaseSync.onTransferenciasChange((lista) => {
-      setTransferencias(lista);
-    });
-
-    const unsubHist = firebaseSync.onHistoricoChange((lista) => {
-      setHistorico(lista);
-    });
-
-    // Listener para o evento customizado disparado pelo firebaseSyncManager
-    const handleSolUpdated = (e: Event) => {
-      const customEvent = e as CustomEvent<SolicitacaoTerritorio[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail)) {
-        setSolicitacoes(customEvent.detail);
-      }
-    };
-    window.addEventListener('solicitacoes-firebase-updated', handleSolUpdated);
-
-    // Consulta inicial e atualização ao voltar para a aba ou desbloquear o aparelho
-    firebaseSync.refreshSolicitacoes().catch(() => {});
-
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        firebaseSync.refreshSolicitacoes().catch(() => {});
-      }
-    };
-    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
-
-    // Sincronização do modo responsável com o botão Voltar do Android
-    const handlePopStateTerritorios = (event: PopStateEvent) => {
-      if (event.state && event.state.screen === 'territorios') {
-        setIsAdmin(Boolean(event.state.isResponsible));
-      }
-    };
-    window.addEventListener('popstate', handlePopStateTerritorios);
-
-    return () => {
-      unsubTer();
-      unsubSol();
-      unsubTr();
-      unsubHist();
-      window.removeEventListener('solicitacoes-firebase-updated', handleSolUpdated);
-      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-      window.removeEventListener('popstate', handlePopStateTerritorios);
-    };
   }, []);
 
-  // Forçar atualização das solicitações ao entrar no modo responsável
+  useEffect(() => {
+    carregarDados();
+  }, [carregarDados]);
+
   useEffect(() => {
     if (isAdmin) {
-      firebaseSync.refreshSolicitacoes().catch(() => {});
+      setViewMode('admin');
     }
   }, [isAdmin]);
 
-  // Verificar status de notificações push
-  useEffect(() => {
-    const supported = isPushNotificationSupported();
-    setPushSupported(supported);
-    if (supported) {
-      setPushEnabled(isDevicePushEnabled());
-    }
-  }, [isAdmin]);
-
-  const handleEnablePush = async () => {
-    setIsActivatingPush(true);
-    try {
-      const res = await registerResponsiblePushDevice();
-      setNotification(res.message);
-      if (res.success) {
-        setPushEnabled(true);
-        setPushDismissed(false);
-        try {
-          localStorage.removeItem('vila_cisper_push_dismissed');
-        } catch {}
-      } else if (res.permission === 'granted') {
-        setPushEnabled(false);
-      }
-    } catch (err: any) {
-      console.error('Erro ao ativar notificações:', err);
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        setNotification('As notificações foram autorizadas, mas este dispositivo ainda não foi registrado para recebê-las.');
-      } else {
-        setNotification('Permissão de notificações ainda não definida.');
-      }
-    } finally {
-      setIsActivatingPush(false);
-    }
+  const showNotification = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((current) => (current === msg ? null : current));
+    }, 4000);
   };
 
-  const handleDismissPush = () => {
-    setPushDismissed(true);
-    try {
-      localStorage.setItem('vila_cisper_push_dismissed', 'true');
-    } catch {}
-  };
-
-  const handleTestPush = async () => {
-    setIsSendingTestPush(true);
-    try {
-      const res = await sendTestNotificationToResponsible();
-      setNotification(res.message);
-    } catch {
-      setNotification('Erro ao disparar notificação de teste.');
-    } finally {
-      setIsSendingTestPush(false);
-    }
-  };
-
-  // Limpar notificação
-  useEffect(() => {
-    if (!notification) return;
-    const timer = setTimeout(() => setNotification(''), 4500);
-    return () => clearTimeout(timer);
-  }, [notification]);
-
-  // Handlers de autenticação
-  const handleOpenAuthModal = () => {
-    setPasswordInput('');
-    setAuthError('');
-    setShowPasswordModal(true);
-  };
-
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (verifyAdminPassword(passwordInput)) {
       setAdminAuthenticated(true);
-      setIsAdmin(true);
       setShowPasswordModal(false);
       setPasswordInput('');
-      setAuthError('');
-      setNotification('Área do Responsável autenticada com sucesso.');
-      window.history.pushState(
-        { screen: 'territorios', isResponsible: true },
-        '',
-        '/?screen=territorios&view=responsavel'
+      setAuthError(false);
+      setViewMode('admin');
+      showNotification('Modo Responsável ativado com sucesso!');
+      if (onAdminLoginSuccess) onAdminLoginSuccess();
+    } else {
+      setAuthError(true);
+    }
+  };
+
+  const territoriosFiltrados = useMemo(() => {
+    return territorios.filter((t) => {
+      const st = (t.status || '').toLowerCase();
+      if (filtroStatus !== 'todos' && !st.includes(filtroStatus.toLowerCase())) return false;
+      if (filtroTexto.trim()) {
+        const termo = filtroTexto.toLowerCase();
+        const texto = `${t.numero} ${t.localidade || t.nome || ''} ${t.bairro || ''} ${t.designado_para || t.designadoPara || ''}`.toLowerCase();
+        return texto.includes(termo);
+      }
+      return true;
+    });
+  }, [territorios, filtroStatus, filtroTexto]);
+
+  const getStatusBadge = (status?: string) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('dispon')) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+          <CheckCircle className="h-3 w-3" />
+          Disponível
+        </span>
       );
-    } else {
-      setAuthError('Senha incorreta. Verifique com os irmãos responsáveis.');
     }
-  };
-
-  const handleAdminLogout = () => {
-    setAdminAuthenticated(false);
-    setIsAdmin(false);
-    setNotification('Área do Responsável encerrada.');
-    if (window.history.state && window.history.state.isResponsible) {
-      window.history.back();
+    if (s.includes('conclu')) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+          <CheckCircle className="h-3 w-3" />
+          Concluído
+        </span>
+      );
     }
-  };
-
-  const handleSalvarNovaSenha = (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = updateAdminPassword(senhaAtualInput, novaSenhaInput);
-    if (res.success) {
-      setShowTrocarSenhaModal(false);
-      setSenhaAtualInput('');
-      setNovaSenhaInput('');
-      setTrocaSenhaError('');
-      setNotification('Senha alterada com sucesso!');
-    } else {
-      setTrocaSenhaError(res.error || 'Erro ao alterar a senha.');
+    if (s.includes('trabalho') || s.includes('desig')) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+          <Clock className="h-3 w-3" />
+          Designado
+        </span>
+      );
     }
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+        <Clock className="h-3 w-3" />
+        {status || 'Pendente'}
+      </span>
+    );
   };
 
   return (
-    <div className="space-y-6">
-      {/* ------------------------------------------------------------- */}
-      {/* CABEÇALHO DO MÓDULO TERRITÓRIOS */}
-      {/* ------------------------------------------------------------- */}
-      <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-                TERRITÓRIOS
-              </h2>
-              {isAdmin && (
-                <span className="inline-flex items-center gap-1 rounded-sm bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-950/80 dark:text-blue-300">
-                  <Lock className="h-3 w-3" />
-                  Área do Responsável
-                </span>
-              )}
-            </div>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              {isAdmin
-                ? 'Painel do Responsável: Solicitações, Transferências, Cadastro de Territórios e Histórico.'
-                : 'Solicite um território para realizar o trabalho de pregação.'}
-            </p>
-          </div>
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Toast de Notificação */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-2xl dark:bg-white dark:text-slate-900 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle className="h-4 w-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
-          {/* Botão de autenticação / encerramento */}
-          <div>
-            {!isAdmin ? (
+      {/* Cabeçalho */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Map className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+              Territórios da Congregação
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            Cartões de território, cobertura de quadras e solicitações
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Seletor de Modo de Exibição */}
+          <div className="inline-flex rounded-xl bg-slate-200/70 p-1 text-xs font-semibold dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setViewMode('publicador')}
+              className={`rounded-lg px-3 py-1.5 transition-colors ${
+                viewMode === 'publicador'
+                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              Publicador
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('todos')}
+              className={`rounded-lg px-3 py-1.5 transition-colors ${
+                viewMode === 'todos'
+                  ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              Lista de Quadras
+            </button>
+            {(isAdmin || isAdminAuthenticated()) && (
               <button
-                id="btn-acesso-responsavel"
                 type="button"
-                onClick={handleOpenAuthModal}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => setViewMode('admin')}
+                className={`rounded-lg px-3 py-1.5 transition-colors ${
+                  viewMode === 'admin'
+                    ? 'bg-white text-indigo-700 shadow-xs dark:bg-slate-900 dark:text-indigo-400'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                }`}
               >
-                <Lock className="h-3.5 w-3.5 text-slate-500" />
-                Acesso do Responsável
+                Painel Responsável
               </button>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                {pushSupported && (
-                  <>
-                    {pushEnabled ? (
-                      <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                        <BellRing className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>Notificações Ativas</span>
-                        <button
-                          type="button"
-                          id="btn-testar-push"
-                          onClick={handleTestPush}
-                          disabled={isSendingTestPush}
-                          title="Enviar notificação de teste para este dispositivo"
-                          className="ml-1 text-[11px] font-bold underline hover:text-emerald-950 dark:hover:text-white"
-                        >
-                          {isSendingTestPush ? 'Testando...' : 'Testar'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        id="btn-ativar-notificacoes-header"
-                        onClick={handleEnablePush}
-                        disabled={isActivatingPush}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300 transition-colors"
-                        title="Ativar notificações push no aparelho"
-                      >
-                        <Bell className="h-3.5 w-3.5" />
-                        <span>{isActivatingPush ? 'Ativando...' : 'Ativar Notificações'}</span>
-                      </button>
-                    )}
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowTrocarSenhaModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
-                  Alterar Senha
-                </button>
-                <button
-                  id="btn-sair-responsavel"
-                  type="button"
-                  onClick={handleAdminLogout}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  <Unlock className="h-3.5 w-3.5" />
-                  Sair do Acesso Restrito
-                </button>
-              </div>
             )}
           </div>
+
+          {!isAdmin && !isAdminAuthenticated() && (
+            <button
+              type="button"
+              onClick={() => setShowPasswordModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 shadow-xs"
+            >
+              <Lock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Acesso Responsável</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* BANNER DE SOLICITAÇÃO DE PERMISSÃO DE NOTIFICAÇÕES (RESPONSÁVEL) */}
-      {isAdmin && pushSupported && !pushEnabled && !pushDismissed && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
-                <BellRing className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">
-                  Notificações de Novas Solicitações
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                  Permitir notificações para receber avisos quando um irmão solicitar um território.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-              <button
-                type="button"
-                id="btn-recusar-push-banner"
-                onClick={handleDismissPush}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                Agora não
-              </button>
-              <button
-                type="button"
-                id="btn-ativar-push-banner"
-                onClick={handleEnablePush}
-                disabled={isActivatingPush}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-amber-700 disabled:opacity-50 transition-colors"
-              >
-                <Bell className="h-3.5 w-3.5" />
-                {isActivatingPush ? 'Ativando...' : 'Permitir Notificações'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Notificação temporária */}
-      {notification && (
-        <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:border-emerald-800/80 dark:text-emerald-300">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 dark:text-emerald-400" />
-          <span>{notification}</span>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* RENDERIZAÇÃO: PÚBLICO (PUBLICADOR) OU RESPONSÁVEL (ADMIN) */}
-      {/* ------------------------------------------------------------- */}
-      {!isAdmin ? (
-        <PublicadorTerritoriosView
-          territorios={territorios}
-          solicitacoes={solicitacoes}
-          transferencias={transferencias}
-          onDataChange={recarregarDados}
-          onNotification={(msg) => setNotification(msg)}
-        />
-      ) : (
+      {/* VISÃO 1: PAINEL DO RESPONSÁVEL (ADMIN) */}
+      {viewMode === 'admin' && (
         <AdminTerritoriosView
           territorios={territorios}
           solicitacoes={solicitacoes}
           transferencias={transferencias}
           historico={historico}
-          onDataChange={recarregarDados}
-          onNotification={(msg) => setNotification(msg)}
+          onDataChange={carregarDados}
+          onNotification={showNotification}
         />
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL */}
-      {/* ------------------------------------------------------------- */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Acesso do Responsável
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPasswordModal(false);
-                  setPasswordInput('');
-                  setAuthError('');
-                }}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      {/* VISÃO 2: ÁREA DO PUBLICADOR */}
+      {viewMode === 'publicador' && (
+        <PublicadorTerritoriosView
+          territorios={territorios}
+          solicitacoes={solicitacoes}
+          transferencias={transferencias}
+          onDataChange={carregarDados}
+          onNotification={showNotification}
+        />
+      )}
+
+      {/* VISÃO 3: GRADE DE TODOS OS TERRITÓRIOS */}
+      {viewMode === 'todos' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                value={filtroTexto}
+                onChange={(e) => setFiltroTexto(e.target.value)}
+                placeholder="Buscar por número, bairro ou irmão designado..."
+                className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              />
             </div>
 
-            <form onSubmit={handleAdminLogin} className="mt-4 space-y-4">
-              <div>
-                <label
-                  htmlFor="input-senha-responsavel"
-                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  SENHA DE ACESSO
-                </label>
-                <div className="relative mt-1">
-                  <input
-                    id="input-senha-responsavel"
-                    type={showPasswordText ? 'text' : 'password'}
-                    required
-                    autoFocus
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Digite a senha"
-                    className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordText(!showPasswordText)}
-                    className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                  >
-                    {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {authError && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">{authError}</p>
-                )}
-                <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  Senha inicial de fábrica: <code>cisper2026</code> (pode ser alterada a qualquer momento após o acesso).
-                </p>
-              </div>
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              <option value="todos">Todos os Status</option>
+              <option value="disponivel">Disponíveis</option>
+              <option value="designado">Designados</option>
+              <option value="concluido">Concluídos</option>
+            </select>
+          </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordModal(false);
-                    setPasswordInput('');
-                    setAuthError('');
-                  }}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  id="btn-confirmar-login-responsavel"
-                  type="submit"
-                  className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  Acessar
-                </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {territoriosFiltrados.map((ter) => (
+              <div
+                key={ter.id}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-slate-800">
+                  <span className="text-base font-black text-indigo-700 dark:text-indigo-400">
+                    Território {ter.numero}
+                  </span>
+                  {getStatusBadge(ter.status)}
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {ter.localidade || ter.nome}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {ter.descricao || `${ter.bairro || 'Vila Cisper'} • ${ter.totalQuadras || 6} quadras`}
+                  </p>
+                </div>
+
+                {(ter.designado_para || ter.designadoPara) && (
+                  <div className="rounded-xl bg-slate-50 p-2.5 text-xs dark:bg-slate-800/50">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Designado Para
+                    </span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {ter.designado_para || ter.designadoPara} ({ter.data_ultima_designacao || ter.dataDesignacao || 'Em andamento'})
+                    </span>
+                  </div>
+                )}
+
+                {ter.mapa_url && (
+                  <div className="pt-1">
+                    <a
+                      href={ter.mapa_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
+                    >
+                      <Map className="h-3.5 w-3.5" />
+                      Visualizar Mapa
+                    </a>
+                  </div>
+                )}
               </div>
-            </form>
+            ))}
           </div>
         </div>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL DE ALTERAÇÃO DE SENHA */}
-      {/* ------------------------------------------------------------- */}
-      {showTrocarSenhaModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Alterar Senha do Responsável
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTrocarSenhaModal(false);
-                  setSenhaAtualInput('');
-                  setNovaSenhaInput('');
-                  setTrocaSenhaError('');
-                }}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSalvarNovaSenha} className="mt-4 space-y-3.5">
-              <div>
-                <label
-                  htmlFor="input-senha-atual"
-                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  SENHA ATUAL
-                </label>
-                <input
-                  id="input-senha-atual"
-                  type="password"
-                  required
-                  value={senhaAtualInput}
-                  onChange={(e) => setSenhaAtualInput(e.target.value)}
-                  placeholder="Senha atual"
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-hidden dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="input-nova-senha"
-                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  NOVA SENHA (MÍNIMO 4 CARACTERES)
-                </label>
-                <input
-                  id="input-nova-senha"
-                  type="password"
-                  required
-                  value={novaSenhaInput}
-                  onChange={(e) => setNovaSenhaInput(e.target.value)}
-                  placeholder="Nova senha"
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-hidden dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                />
-              </div>
-
-              {trocaSenhaError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{trocaSenhaError}</p>
+      {/* Modal Senha de Acesso Responsável */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
+              Modo Responsável por Territórios
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Digite a senha de responsável da Congregação Vila Cisper:
+            </p>
+            <form onSubmit={handleAdminAuthSubmit} className="space-y-3">
+              <input
+                type="password"
+                placeholder="Senha de acesso (67744)"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                autoFocus
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+              {authError && (
+                <p className="text-xs text-red-500 font-semibold">Senha incorreta. Tente novamente.</p>
               )}
-
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowTrocarSenhaModal(false);
-                    setSenhaAtualInput('');
-                    setNovaSenhaInput('');
-                    setTrocaSenhaError('');
-                  }}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="rounded-xl px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                  className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"
                 >
-                  Salvar Nova Senha
+                  Entrar
                 </button>
               </div>
             </form>

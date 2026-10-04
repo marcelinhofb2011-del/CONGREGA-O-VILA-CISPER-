@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
-  FileSpreadsheet,
   FileText,
   Upload,
   CheckCircle2,
@@ -18,7 +17,6 @@ import {
   Sparkles,
   BookOpen,
 } from 'lucide-react';
-import { readSpreadsheetFile, parseDelimitedText } from '../utils/csvSpreadsheetUtils';
 import { IRMAOS_CONGREGACAO } from '../data/irmaos';
 import {
   EscalaDesignacaoItem,
@@ -40,7 +38,6 @@ import {
   getStoredCampoProgramacao,
   saveBulkCampoProgramacao,
 } from '../data/campoStorage';
-import { getHorarioSaidaDeCampo } from '../data/horariosReunioesStorage';
 import {
   LimpezaEscalaItem,
   getStoredLimpezaEscalas,
@@ -153,41 +150,41 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       case 'designacoes':
         return {
           titulo: 'Designações',
-          subtitulo: 'Indicadores, Microfones, Áudio e Vídeo, Leitor',
-          cor: 'blue',
-          icone: Users,
+          subtitulo: 'Importação automática via PDF oficial de Designações',
+          cor: 'purple',
+          icone: FileText,
           camposEsperados: ['Data', 'Indicador', 'Microfone', 'Áudio e vídeo', 'Leitor'],
         };
       case 'vida-ministerio':
         return {
-          titulo: 'Vida e Ministério (PDF)',
+          titulo: 'Vida e Ministério',
           subtitulo: 'Importação automática via PDF oficial (Apostila / Formulário S-140-T)',
           cor: 'purple',
-          icone: BookOpen,
+          icone: FileText,
           camposEsperados: ['Data', 'Presidente', 'Tesouros', 'Ministério', 'Vida Cristã'],
         };
       case 'discursos':
         return {
           titulo: 'Discurso Público',
-          subtitulo: 'Discursos bíblicos, oradores e temas',
-          cor: 'amber',
-          icone: Speech,
+          subtitulo: 'Importação automática via PDF oficial de Discursos Bíblicos',
+          cor: 'purple',
+          icone: FileText,
           camposEsperados: ['Data', 'Tema', 'Orador'],
         };
       case 'campo':
         return {
           titulo: 'Serviço de Campo',
-          subtitulo: 'Saídas de campo, horários, locais e dirigentes',
-          cor: 'sky',
-          icone: Clock,
+          subtitulo: 'Importação automática via PDF oficial de Serviço de Campo',
+          cor: 'purple',
+          icone: FileText,
           camposEsperados: ['Data', 'Horário', 'Ponto de encontro', 'Responsável'],
         };
       case 'limpeza':
         return {
           titulo: 'Grupo de Limpeza',
-          subtitulo: 'Escala de manutenção e grupos responsáveis',
-          cor: 'emerald',
-          icone: Sparkles,
+          subtitulo: 'Importação automática via PDF oficial de Grupos de Limpeza',
+          cor: 'purple',
+          icone: FileText,
           camposEsperados: ['Data', 'Grupo responsável'],
         };
     }
@@ -253,7 +250,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
     return null;
   };
 
-  // Processa arquivo selecionado (PDF ou Planilha)
+  // Processa arquivo selecionado (EXCLUSIVAMENTE arquivo PDF)
   const handleCarregarArquivo = async (file: File) => {
     try {
       arquivoSelecionadoRef.current = file;
@@ -264,114 +261,97 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       const isPdfFile =
         file.type === 'application/pdf' ||
         file.name.toLowerCase().endsWith('.pdf');
-      setIsPdf(isPdfFile);
+      setIsPdf(true);
 
-      // Regra estrita: Vida e Ministério é EXCLUSIVAMENTE em formato PDF
-      if (modulo === 'vida-ministerio' && !isPdfFile) {
+      // Exigência estrita: todos os módulos usam exclusivamente arquivo PDF
+      if (!isPdfFile) {
         setErroArquivo(
-          'Para a programação de Vida e Ministério, a importação é feita exclusivamente por arquivo PDF oficial (Apostila da Reunião ou Formulário S-140-T). O modo planilha não é utilizado para esta tela.'
+          'A importação é realizada exclusivamente por arquivo PDF oficial (.pdf). O modo anterior por planilha foi desativado.'
         );
         setIsProcessandoArquivo(false);
         return;
       }
 
-      if (isPdfFile) {
-        setMensagemProgresso('Lendo e interpretando a programação em PDF com Inteligência Artificial...');
+      setMensagemProgresso('Lendo e interpretando a programação em PDF com Inteligência Artificial...');
 
-        // 1. Converte o PDF para base64
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error('Falha ao ler o arquivo PDF no navegador.'));
-        });
-        reader.readAsDataURL(file);
-        const base64Data = await base64Promise;
+      // 1. Converte o PDF para base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Falha ao ler o arquivo PDF no navegador.'));
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
 
-        // 2. Chama a API do servidor com Gemini e sistema resiliente de fallback/retries
-        const resp = await fetch('/api/parse-schedule-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileBase64: base64Data,
-            fileName: file.name,
-            modulo,
-          }),
-        });
+      // 2. Chama a API do servidor com Gemini e sistema resiliente de fallback/retries
+      const resp = await fetch('/api/parse-schedule-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileBase64: base64Data,
+          fileName: file.name,
+          modulo,
+        }),
+      });
 
-        const data = await resp.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Não foi possível interpretar a programação do arquivo PDF.');
-        }
-
-        const listaMeses: string[] =
-          Array.isArray(data.meses) && data.meses.length > 0
-            ? data.meses
-            : [detectarMesTexto(file.name) || MESES_NOMES[new Date().getMonth()]];
-
-        if (modulo === 'vida-ministerio') {
-          const semanasExtraidas: S140TSemana[] = data.semanas || [];
-          if (semanasExtraidas.length === 0) {
-            throw new Error(
-              'Nenhuma semana de reunião foi identificada no PDF. Verifique se o arquivo corresponde à apostila ou formulário S-140-T de Vida e Ministério.'
-            );
-          }
-          setItensPdfExtraidos(semanasExtraidas);
-        } else if (modulo === 'designacoes') {
-          const escalaExtraida: EscalaDesignacaoItem[] = data.escala || [];
-          if (escalaExtraida.length === 0) {
-            throw new Error(
-              'Nenhuma reunião ou designação foi identificada no PDF. Verifique se o arquivo é a escala de indicadores, microfones, som ou leitura.'
-            );
-          }
-          setItensPdfExtraidos(escalaExtraida);
-        }
-
-        setMesesDetectados(listaMeses);
-        setMesesSelecionados(listaMeses);
-        setLinhasBrutas([['PDF_PROCESSADO']]);
-        setPasso(1);
-      } else {
-        // Processamento de Planilhas (.xlsx, .xls, .csv) - Disponível para os demais módulos
-        setMensagemProgresso('Lendo planilha Excel / CSV...');
-        const matrix = await readSpreadsheetFile(file);
-        if (!matrix || matrix.length === 0) {
-          setErroArquivo('A planilha está vazia ou não pôde ser lida.');
-          setIsProcessandoArquivo(false);
-          return;
-        }
-
-        setItensPdfExtraidos([]);
-        setLinhasBrutas(matrix);
-
-        // Detecta os meses presentes na planilha
-        const mesesEncontrados = new Set<string>();
-        let mesAtualContexto: string | null = null;
-
-        for (const row of matrix) {
-          const linhaCompleta = row.join(' ');
-          const mesDetectado = detectarMesTexto(linhaCompleta);
-          if (mesDetectado) {
-            mesAtualContexto = mesDetectado;
-            mesesEncontrados.add(mesDetectado);
-          }
-        }
-
-        // Se nenhum mês foi detectado pelo texto, tenta o mês corrente e seguintes
-        if (mesesEncontrados.size === 0) {
-          const mesAtualIdx = new Date().getMonth();
-          mesesEncontrados.add(MESES_NOMES[mesAtualIdx]);
-        }
-
-        const listaMeses = Array.from(mesesEncontrados).sort((a, b) => {
-          return MESES_NOMES.indexOf(a) - MESES_NOMES.indexOf(b);
-        });
-
-        setMesesDetectados(listaMeses);
-        setMesesSelecionados(listaMeses); // Por padrão, seleciona todos os encontrados
-        setPasso(1); // Permanece no passo 1 mostrando arquivo carregado e o botão "CONTINUAR"
+      const data = await resp.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Não foi possível interpretar a programação do arquivo PDF.');
       }
+
+      const listaMeses: string[] =
+        Array.isArray(data.meses) && data.meses.length > 0
+          ? data.meses
+          : [detectarMesTexto(file.name) || MESES_NOMES[new Date().getMonth()]];
+
+      if (modulo === 'vida-ministerio') {
+        const semanasExtraidas: S140TSemana[] = data.semanas || [];
+        if (semanasExtraidas.length === 0) {
+          throw new Error(
+            'Nenhuma semana de reunião foi identificada no PDF. Verifique se o arquivo corresponde à apostila ou formulário S-140-T de Vida e Ministério.'
+          );
+        }
+        setItensPdfExtraidos(semanasExtraidas);
+      } else if (modulo === 'designacoes') {
+        const escalaExtraida: EscalaDesignacaoItem[] = data.escala || [];
+        if (escalaExtraida.length === 0) {
+          throw new Error(
+            'Nenhuma reunião ou designação foi identificada no PDF. Verifique se o arquivo é a escala de indicadores, microfones, som ou leitura.'
+          );
+        }
+        setItensPdfExtraidos(escalaExtraida);
+      } else if (modulo === 'campo') {
+        const campoExtraido: CampoProgramacao[] = data.programacao || [];
+        if (campoExtraido.length === 0) {
+          throw new Error(
+            'Nenhuma saída de campo foi identificada no PDF. Verifique se o arquivo corresponde à programação de Serviço de Campo.'
+          );
+        }
+        setItensPdfExtraidos(campoExtraido);
+      } else if (modulo === 'discursos') {
+        const discursosExtraidos: DiscursoBiblicoItem[] = data.discursos || [];
+        if (discursosExtraidos.length === 0) {
+          throw new Error(
+            'Nenhum discurso público foi identificado no PDF. Verifique se o arquivo corresponde à escala de Discursos Bíblicos.'
+          );
+        }
+        setItensPdfExtraidos(discursosExtraidos);
+      } else if (modulo === 'limpeza') {
+        const limpezaExtraida: LimpezaEscalaItem[] = data.escalas || [];
+        if (limpezaExtraida.length === 0) {
+          throw new Error(
+            'Nenhuma escala de limpeza foi identificada no PDF. Verifique se o arquivo corresponde à escala de Grupos de Limpeza.'
+          );
+        }
+        setItensPdfExtraidos(limpezaExtraida);
+      }
+
+      setMesesDetectados(listaMeses);
+      setMesesSelecionados(listaMeses);
+      setLinhasBrutas([['PDF_PROCESSADO']]);
+      setPasso(1);
     } catch (err: any) {
-      setErroArquivo(err.message || 'Erro ao carregar o arquivo da programação.');
+      setErroArquivo(err.message || 'Erro ao carregar o arquivo da programação em PDF.');
     } finally {
       setIsProcessandoArquivo(false);
       setMensagemProgresso('');
@@ -385,9 +365,9 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       const isPdfFile =
         file.type === 'application/pdf' ||
         file.name.toLowerCase().endsWith('.pdf');
-      if (modulo === 'vida-ministerio' && !isPdfFile) {
+      if (!isPdfFile) {
         setErroArquivo(
-          'Para a programação de Vida e Ministério, a importação é realizada exclusivamente por arquivo PDF oficial (.pdf).'
+          'A importação é realizada exclusivamente por arquivo PDF oficial (.pdf). O modo anterior por planilha foi desativado.'
         );
         return;
       }
@@ -535,479 +515,225 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
             avisos: [],
           });
         });
+      } else if (modulo === 'campo') {
+        itensPdfExtraidos.forEach((item: CampoProgramacao, idx: number) => {
+          const mesDetectado =
+            detectarMesTexto(item.data || '') ||
+            mesesSelecionados[0] ||
+            'Mês';
+          const mesNorm = normalizar(mesDetectado);
+
+          const pertenceAoMes =
+            mesesAlvoNorm.has(mesNorm) ||
+            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
+
+          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+            return;
+          }
+
+          contagem[mesDetectado] = (contagem[mesDetectado] || 0) + 1;
+
+          const avisosLinha: string[] = [];
+          if (!item.responsavel) {
+            validacoes.push({
+              mes: mesDetectado,
+              data: item.data,
+              campo: 'Responsável',
+              motivo: 'Dirigente ou responsável da saída de campo não informado.',
+              gravidade: 'alerta',
+            });
+            avisosLinha.push('Responsável não informado');
+          }
+
+          registros.push({
+            idTemp: item.id || `campo-pdf-${Date.now()}-${idx}`,
+            mes: mesDetectado,
+            data: item.data,
+            diaSemanaCalculado: item.data,
+            dadosFormatados: {
+              'Data': item.data,
+              'Horário': item.horario || '08:00',
+              'Ponto de Encontro': item.pontoEncontro || 'Salão do Reino',
+              'Responsável': item.responsavel || '—',
+            },
+            itemFinal: {
+              ...item,
+              id: item.id || `campo-${Date.now()}-${idx}`,
+            },
+            avisos: avisosLinha,
+          });
+        });
+      } else if (modulo === 'discursos') {
+        itensPdfExtraidos.forEach((item: DiscursoBiblicoItem, idx: number) => {
+          const mesDetectado =
+            item.mes ||
+            detectarMesTexto(item.data || '') ||
+            mesesSelecionados[0] ||
+            'Mês';
+          const mesNorm = normalizar(mesDetectado);
+
+          const pertenceAoMes =
+            mesesAlvoNorm.has(mesNorm) ||
+            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
+
+          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+            return;
+          }
+
+          contagem[mesDetectado] = (contagem[mesDetectado] || 0) + 1;
+
+          const avisosLinha: string[] = [];
+          if (!item.tema) {
+            validacoes.push({
+              mes: mesDetectado,
+              data: item.data,
+              campo: 'Tema',
+              motivo: 'Tema do discurso bíblico não informado.',
+              gravidade: 'alerta',
+            });
+            avisosLinha.push('Tema não informado');
+          }
+          if (!item.orador) {
+            validacoes.push({
+              mes: mesDetectado,
+              data: item.data,
+              campo: 'Orador',
+              motivo: 'Orador não informado na escala.',
+              gravidade: 'alerta',
+            });
+            avisosLinha.push('Orador não informado');
+          }
+
+          registros.push({
+            idTemp: item.id || `disc-pdf-${Date.now()}-${idx}`,
+            mes: mesDetectado,
+            data: item.data,
+            diaSemanaCalculado: item.data,
+            dadosFormatados: {
+              'Data': item.data,
+              'Tema': item.tema || '—',
+              'Orador': item.congregacaoOrador ? `${item.orador} (${item.congregacaoOrador})` : item.orador || '—',
+              'Presidente': item.presidente || '—',
+              'Leitor': item.leitor || '—',
+            },
+            itemFinal: {
+              ...item,
+              id: item.id || `disc-${Date.now()}-${idx}`,
+              mes: mesDetectado,
+            },
+            avisos: avisosLinha,
+          });
+        });
+      } else if (modulo === 'limpeza') {
+        itensPdfExtraidos.forEach((item: LimpezaEscalaItem, idx: number) => {
+          const mesDetectado =
+            item.mes ||
+            detectarMesTexto(item.dias || '') ||
+            mesesSelecionados[0] ||
+            'Mês';
+          const mesNorm = normalizar(item.mesChave || mesDetectado);
+
+          const pertenceAoMes =
+            mesesAlvoNorm.has(mesNorm) ||
+            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
+
+          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+            return;
+          }
+
+          contagem[mesDetectado] = (contagem[mesDetectado] || 0) + 1;
+
+          const avisosLinha: string[] = [];
+          if (!item.grupo) {
+            validacoes.push({
+              mes: mesDetectado,
+              data: item.dias,
+              campo: 'Grupo',
+              motivo: 'Grupo responsável não informado.',
+              gravidade: 'alerta',
+            });
+            avisosLinha.push('Grupo não informado');
+          }
+
+          registros.push({
+            idTemp: item.id || `limp-pdf-${Date.now()}-${idx}`,
+            mes: mesDetectado,
+            data: `${item.dias} de ${mesDetectado}`,
+            diaSemanaCalculado: item.diasSemana || 'Quarta Feira e Domingo',
+            dadosFormatados: {
+              'Período / Dias': item.dias,
+              'Grupo Encarregado': item.grupo || '—',
+              'Reuniões': item.diasSemana || 'Quarta Feira e Domingo',
+              'Responsáveis': item.responsaveis || '—',
+            },
+            itemFinal: {
+              ...item,
+              id: item.id || `limp-${Date.now()}-${idx}`,
+              mes: mesDetectado,
+              mesChave: item.mesChave || normalizar(mesDetectado),
+            },
+            avisos: avisosLinha,
+          });
+        });
+      }
+
+      // Identifica se há registros duplicados na própria programação em PDF
+      const datasVistas = new Set<string>();
+      registros.forEach((r) => {
+        if (datasVistas.has(r.data)) {
+          validacoes.push({
+            mes: r.mes,
+            data: r.data,
+            campo: 'Duplicidade',
+            motivo: `A data ${r.data} aparece repetida mais de uma vez no documento PDF.`,
+            gravidade: 'alerta',
+          });
+        }
+        datasVistas.add(r.data);
+      });
+
+      // Verifica conflitos com dados já existentes no aplicativo
+      let totalConflitos = 0;
+      if (modulo === 'designacoes') {
+        const atuais = getStoredEscalaDesignacoes();
+        const chavesMeses = new Set(mesesSelecionados.map(normalizar));
+        totalConflitos = atuais.filter((a) => chavesMeses.has(a.mesChave)).length;
+      } else if (modulo === 'discursos') {
+        const atuais = getStoredDiscursosBiblicos();
+        const mesesSel = new Set(mesesSelecionados.map((m) => m.toLowerCase()));
+        totalConflitos = atuais.filter((d) => mesesSel.has(d.mes.toLowerCase())).length;
+      } else if (modulo === 'campo') {
+        const atuais = getStoredCampoProgramacao();
+        const datasPlanilha = new Set(registros.map((r) => r.data));
+        totalConflitos = atuais.filter((c) => datasPlanilha.has(c.data)).length;
+      } else if (modulo === 'limpeza') {
+        const atuais = getStoredLimpezaEscalas();
+        const chavesMeses = new Set(mesesSelecionados.map(normalizar));
+        totalConflitos = atuais.filter((l) => chavesMeses.has(l.mesChave)).length;
+      } else if (modulo === 'vida-ministerio') {
+        const atuais = getStoredS140TSemanas();
+        totalConflitos = atuais.filter((s) =>
+          mesesSelecionados.some((m) =>
+            (s.periodo || '').toLowerCase().includes(m.toLowerCase())
+          )
+        ).length;
       }
 
       return {
         registrosProcessados: registros,
         inconsistencias: validacoes,
         contagemPorMes: contagem,
-        conflitosExistentes: 0,
+        conflitosExistentes: totalConflitos,
       };
-    }
-    const registros: RegistroProcessado[] = [];
-    const validacoes: ValidacaoItem[] = [];
-    const contagem: Record<string, number> = {};
-    mesesSelecionados.forEach((m) => (contagem[m] = 0));
-
-    let mesContextoAtual = mesesSelecionados[0] || 'Janeiro';
-    const anoAtual = new Date().getFullYear();
-
-    // Map de cabeçalhos de coluna se houver
-    let mapaColunas: Record<string, number> = {};
-    let cabecalhoDetectado = false;
-
-    for (let idx = 0; idx < linhasBrutas.length; idx++) {
-      const cells = linhasBrutas[idx].map((c) => (c ? c.trim() : ''));
-      const linhaTexto = cells.join(' ').trim();
-      if (!linhaTexto) continue;
-
-      // Detecta se a linha é um título de Mês isolado
-      const mesLinha = detectarMesTexto(linhaTexto);
-      const celulasComTexto = cells.filter(Boolean);
-      if (mesLinha && celulasComTexto.length <= 2 && !linhaTexto.includes('/')) {
-        mesContextoAtual = mesLinha;
-        continue;
-      }
-
-      // Detecção de linha de cabeçalho de colunas
-      const normLinha = normalizar(linhaTexto);
-      if (
-        (normLinha.includes('indicador') && normLinha.includes('microfone')) ||
-        (normLinha.includes('orador') && normLinha.includes('tema')) ||
-        (normLinha.includes('ponto') && normLinha.includes('responsavel')) ||
-        (normLinha.includes('grupo') && (normLinha.includes('limpeza') || normLinha.includes('responsavel') || normLinha.includes('escala'))) ||
-        (normLinha.includes('dias') && normLinha.includes('grupo')) ||
-        (normLinha.includes('data') && normLinha.includes('grupo')) ||
-        (normLinha.includes('tesouros') && normLinha.includes('presidente'))
-      ) {
-        cabecalhoDetectado = true;
-        mapaColunas = {};
-        cells.forEach((c, i) => {
-          const colNorm = normalizar(c);
-          if (colNorm.includes('data') || colNorm.includes('dia') || colNorm.includes('periodo') || colNorm.includes('intervalo'))
-            mapaColunas['data'] = i;
-          if (colNorm.includes('indicador')) mapaColunas['indicador'] = i;
-          if (colNorm.includes('microfone') || colNorm.includes('volante')) mapaColunas['microfone'] = i;
-          if (colNorm.includes('leitor')) mapaColunas['leitor'] = i;
-          if (colNorm.includes('audio e video') || colNorm.includes('som e video') || colNorm.includes('audio'))
-            mapaColunas['audio'] = i;
-          if (colNorm.includes('video')) mapaColunas['video'] = i;
-          if (colNorm.includes('tema')) mapaColunas['tema'] = i;
-          if (colNorm.includes('orador')) mapaColunas['orador'] = i;
-          if (colNorm.includes('horario') || colNorm.includes('hora')) mapaColunas['horario'] = i;
-          if (colNorm.includes('ponto') || colNorm.includes('local')) mapaColunas['pontoEncontro'] = i;
-          if (colNorm.includes('responsavel') || colNorm.includes('dirigente') || colNorm.includes('encarregado'))
-            mapaColunas['responsavel'] = i;
-          if (colNorm.includes('grupo')) mapaColunas['grupo'] = i;
-          if (colNorm.includes('reuniao') || colNorm.includes('semana') || colNorm.includes('frequencia'))
-            mapaColunas['diasSemana'] = i;
-          if (colNorm.includes('presidente')) mapaColunas['presidente'] = i;
-          if (colNorm.includes('parte')) mapaColunas['partes'] = i;
-          if (colNorm.includes('observacao') || colNorm.includes('obs')) mapaColunas['observacao'] = i;
-        });
-        continue;
-      }
-
-      // Extrai data da linha
-      let dataFormatada = '';
-      let diaNum = 0;
-      let mesNum = 0;
-      let anoNum = anoAtual;
-      let rawDiasIntervaloLimpeza = '';
-
-      if (modulo === 'limpeza') {
-        // No módulo de limpeza, a coluna de dias frequentemente traz intervalos como "7/11", "04/08", "14/18", "4", "28"
-        const colIdx = mapaColunas['data'] !== undefined ? mapaColunas['data'] : 0;
-        const celulaDias = (cells[colIdx] || '').trim();
-        const matchNums = celulaDias.match(/\d+/g);
-
-        if (matchNums && matchNums.length > 0) {
-          rawDiasIntervaloLimpeza = celulaDias;
-          diaNum = parseInt(matchNums[0], 10);
-          mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
-          dataFormatada = `${rawDiasIntervaloLimpeza} de ${mesContextoAtual}`;
-        } else {
-          // Tenta encontrar em outra célula da linha se a coluna 0 estiver vazia
-          const celComNum = cells.find((c) => /\d+/.test(c));
-          if (celComNum) {
-            rawDiasIntervaloLimpeza = celComNum.trim();
-            const nums = rawDiasIntervaloLimpeza.match(/\d+/g);
-            diaNum = nums ? parseInt(nums[0], 10) : 1;
-            mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
-            dataFormatada = `${rawDiasIntervaloLimpeza} de ${mesContextoAtual}`;
-          }
-        }
-      } else {
-        const matchData = linhaTexto.match(/(\d{1,2})[\/\-\.](\d{1,2})([\/\-\.](\d{2,4}))?/);
-        if (matchData) {
-          diaNum = parseInt(matchData[1], 10);
-          mesNum = parseInt(matchData[2], 10);
-          if (matchData[4]) {
-            anoNum = parseInt(matchData[4], 10);
-            if (anoNum < 100) anoNum += 2000;
-          }
-          dataFormatada = `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}/${anoNum}`;
-          if (mesNum >= 1 && mesNum <= 12) {
-            mesContextoAtual = MESES_NOMES[mesNum - 1];
-          }
-        } else {
-          // Se a primeira coluna tem apenas o dia número (ex: "04", "07")
-          const possivelDia = parseInt(cells[0], 10);
-          if (!isNaN(possivelDia) && possivelDia >= 1 && possivelDia <= 31) {
-            diaNum = possivelDia;
-            mesNum = MESES_NOMES.indexOf(mesContextoAtual) + 1;
-            dataFormatada = `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}/${anoNum}`;
-          }
-        }
-      }
-
-      // Verifica se o registro pertence a um dos meses selecionados
-      const mesNorm = normalizar(mesContextoAtual);
-      if (!mesesAlvoNorm.has(mesNorm)) {
-        continue; // Ignora registros de meses não selecionados
-      }
-
-      const avisosLinha: string[] = [];
-
-      // 1. Validação de Data
-      let diaSemanaCalculado = '';
-      if (!dataFormatada || diaNum < 1 || diaNum > 31 || mesNum < 1 || mesNum > 12) {
-        validacoes.push({
-          mes: mesContextoAtual,
-          data: dataFormatada || cells[0] || 'Desconhecida',
-          campo: 'Data',
-          motivo: 'Data não informada ou em formato não reconhecido.',
-          gravidade: 'erro',
-        });
-        avisosLinha.push('Data inválida');
-      } else {
-        // Calcula dia da semana real no calendário
-        const dataObj = new Date(anoNum, mesNum - 1, diaNum);
-        if (!isNaN(dataObj.getTime())) {
-          diaSemanaCalculado = DIAS_SEMANA[dataObj.getDay()];
-          // Confere se bate com o dia mencionado na planilha
-          for (const diaNome of DIAS_SEMANA) {
-            if (normLinha.includes(normalizar(diaNome)) && normalizar(diaNome) !== normalizar(diaSemanaCalculado)) {
-              validacoes.push({
-                mes: mesContextoAtual,
-                data: dataFormatada,
-                campo: 'Dia da Semana',
-                motivo: `Planilha cita "${diaNome}", mas o calendário indica que ${dataFormatada} é ${diaSemanaCalculado}.`,
-                gravidade: 'alerta',
-              });
-              avisosLinha.push(`Aviso: Calendário indica ${diaSemanaCalculado}`);
-              break;
-            }
-          }
-        }
-      }
-
-      // =====================================================================
-      // EXTRAÇÃO ESPECÍFICA POR DEPARTAMENTO
-      // =====================================================================
-      if (modulo === 'designacoes') {
-        const indicador = mapaColunas['indicador'] !== undefined ? cells[mapaColunas['indicador']] : cells[1] || '';
-        const microfone = mapaColunas['microfone'] !== undefined ? cells[mapaColunas['microfone']] : cells[2] || '';
-        const leitor = mapaColunas['leitor'] !== undefined ? cells[mapaColunas['leitor']] : cells[3] || '';
-        const audio = mapaColunas['audio'] !== undefined ? cells[mapaColunas['audio']] : cells[4] || '';
-        const video = mapaColunas['video'] !== undefined ? cells[mapaColunas['video']] : cells[5] || '';
-
-        // Formatação do Dia (Ex: QUINTA-FEIRA — 24/09)
-        const diaSemanaTexto = diaSemanaCalculado || (normLinha.includes('domingo') ? 'Domingo' : 'Quarta-Feira');
-        const diaFormatadoExibicao = `${diaSemanaTexto.toUpperCase()} — ${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}`;
-
-        // Validação de nomes cadastrados
-        [
-          { campo: 'Indicador', valor: indicador },
-          { campo: 'Microfone', valor: microfone },
-          { campo: 'Leitor', valor: leitor },
-          { campo: 'Áudio', valor: audio },
-          { campo: 'Vídeo', valor: video },
-        ].forEach(({ campo, valor }) => {
-          if (valor && !verificarNomeIrmao(valor)) {
-            validacoes.push({
-              mes: mesContextoAtual,
-              data: dataFormatada,
-              campo,
-              motivo: `Nome "${valor}" não localizado com precisão no cadastro de irmãos da congregação.`,
-              gravidade: 'alerta',
-            });
-            avisosLinha.push(`Conferir nome: ${valor}`);
-          }
-        });
-
-        // Validação de campos obrigatórios
-        if (!indicador && !microfone && !audio && !video) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: dataFormatada,
-            campo: 'Designações',
-            motivo: 'Nenhum irmão designado (indicador, microfone ou áudio/vídeo).',
-            gravidade: 'alerta',
-          });
-        }
-
-        const itemFinal: EscalaDesignacaoItem = {
-          id: `desig-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          mes: mesContextoAtual,
-          mesChave: normalizar(mesContextoAtual),
-          dia: `${diaSemanaTexto} ${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}`,
-          indicador: indicador.trim(),
-          microfone: microfone.trim(),
-          leitor: leitor.trim(),
-          audio: audio.trim(),
-          video: video.trim(),
-          presidencia: mapaColunas['presidente'] !== undefined ? cells[mapaColunas['presidente']] : '',
-          observacao: '',
-          ehEspecial: normLinha.includes('assembleia') || normLinha.includes('congresso'),
-        };
-
-        registros.push({
-          idTemp: itemFinal.id,
-          mes: mesContextoAtual,
-          data: dataFormatada,
-          diaSemanaCalculado,
-          dadosFormatados: {
-            Reunião: diaFormatadoExibicao,
-            Indicador: indicador || '—',
-            Microfone: microfone || '—',
-            'Áudio e vídeo': audio && video ? `${audio} / ${video}` : audio || video || '—',
-            Leitor: leitor || '—',
-          },
-          itemFinal,
-          avisos: avisosLinha,
-        });
-      } else if (modulo === 'discursos') {
-        const tema = mapaColunas['tema'] !== undefined ? cells[mapaColunas['tema']] : cells[1] || '';
-        const orador = mapaColunas['orador'] !== undefined ? cells[mapaColunas['orador']] : cells[2] || '';
-
-        if (!tema) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: dataFormatada,
-            campo: 'Tema',
-            motivo: 'Tema do discurso bíblico não informado.',
-            gravidade: 'erro',
-          });
-          avisosLinha.push('Tema em branco');
-        }
-        if (!orador) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: dataFormatada,
-            campo: 'Orador',
-            motivo: 'Nome do orador não informado.',
-            gravidade: 'erro',
-          });
-          avisosLinha.push('Orador em branco');
-        }
-
-        const itemFinal: DiscursoBiblicoItem = {
-          id: `disc-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          data: dataFormatada,
-          tema: tema.trim(),
-          orador: orador.trim(),
-          mes: mesContextoAtual,
-        };
-
-        registros.push({
-          idTemp: itemFinal.id,
-          mes: mesContextoAtual,
-          data: dataFormatada,
-          diaSemanaCalculado,
-          dadosFormatados: {
-            Data: dataFormatada,
-            Tema: tema || '—',
-            Orador: orador || '—',
-          },
-          itemFinal,
-          avisos: avisosLinha,
-        });
-      } else if (modulo === 'campo') {
-        const horario =
-          mapaColunas['horario'] !== undefined ? cells[mapaColunas['horario']] : cells[1] || getHorarioSaidaDeCampo();
-        const pontoEncontro =
-          mapaColunas['pontoEncontro'] !== undefined ? cells[mapaColunas['pontoEncontro']] : cells[2] || 'Salão do Reino';
-        const responsavel =
-          mapaColunas['responsavel'] !== undefined ? cells[mapaColunas['responsavel']] : cells[3] || '';
-
-        if (!responsavel) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: dataFormatada,
-            campo: 'Responsável',
-            motivo: 'Responsável/Dirigente da saída de campo não informado.',
-            gravidade: 'alerta',
-          });
-          avisosLinha.push('Responsável não informado');
-        } else if (!verificarNomeIrmao(responsavel)) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: dataFormatada,
-            campo: 'Responsável',
-            motivo: `Irmão "${responsavel}" não localizado no cadastro de publicadores.`,
-            gravidade: 'alerta',
-          });
-          avisosLinha.push(`Conferir: ${responsavel}`);
-        }
-
-        const itemFinal: CampoProgramacao = {
-          id: `campo-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          data: dataFormatada,
-          horario: horario.trim(),
-          pontoEncontro: pontoEncontro.trim(),
-          responsavel: responsavel.trim(),
-        };
-
-        registros.push({
-          idTemp: itemFinal.id,
-          mes: mesContextoAtual,
-          data: dataFormatada,
-          diaSemanaCalculado,
-          dadosFormatados: {
-            Data: dataFormatada,
-            Horário: horario,
-            'Ponto de encontro': pontoEncontro,
-            Responsável: responsavel || '—',
-          },
-          itemFinal,
-          avisos: avisosLinha,
-        });
-      } else if (modulo === 'limpeza') {
-        // Identificação resiliente do grupo
-        let grupo = mapaColunas['grupo'] !== undefined ? cells[mapaColunas['grupo']] : '';
-        if (!grupo) {
-          const celGrupo = cells.find((c) => /grupo\s*\d/i.test(c) || /assembl[eé]ia/i.test(c) || /congresso/i.test(c));
-          grupo = celGrupo || cells[1] || cells[2] || 'GRUPO 1';
-        }
-
-        // Reuniões / Dias da semana
-        let diasSemana = mapaColunas['diasSemana'] !== undefined ? cells[mapaColunas['diasSemana']] : '';
-        if (!diasSemana) {
-          const celSemana = cells.find((c) => /quarta|domingo|s[aá]bado|quinta/i.test(c));
-          if (celSemana) {
-            diasSemana = celSemana;
-          } else if (normLinha.includes('quarta') && normLinha.includes('domingo')) {
-            diasSemana = 'Quarta Feira e Domingo';
-          } else if (normLinha.includes('quarta')) {
-            diasSemana = 'Quarta Feira';
-          } else if (normLinha.includes('domingo')) {
-            diasSemana = 'Domingo';
-          } else {
-            diasSemana = 'Quarta Feira e Domingo';
-          }
-        }
-
-        // Responsáveis encarregados
-        let responsaveis = mapaColunas['responsavel'] !== undefined ? cells[mapaColunas['responsavel']] : '';
-        if (!responsaveis) {
-          // Busca célula que não seja grupo nem dias
-          const possiveis = cells.filter(
-            (c) =>
-              c &&
-              c !== grupo &&
-              c !== diasSemana &&
-              !/^\d+([\/\-\.]\d+)?$/.test(c) &&
-              !normalizar(c).includes('janeiro') &&
-              !normalizar(c).includes('fevereiro')
-          );
-          responsaveis = possiveis[0] || cells[3] || cells[2] || '';
-        }
-
-        const ehEspecial = normLinha.includes('assembleia') || normLinha.includes('congresso');
-        const diasStr = rawDiasIntervaloLimpeza || (diaNum ? String(diaNum).padStart(2, '0') : cells[0] || '1');
-
-        if (!grupo) {
-          validacoes.push({
-            mes: mesContextoAtual,
-            data: `${diasStr} de ${mesContextoAtual}`,
-            campo: 'Grupo Responsável',
-            motivo: 'Grupo responsável pela limpeza não identificado.',
-            gravidade: 'erro',
-          });
-          avisosLinha.push('Grupo não informado');
-        }
-
-        const itemFinal: LimpezaEscalaItem = {
-          id: `limp-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          mes: mesContextoAtual,
-          mesChave: normalizar(mesContextoAtual),
-          dias: diasStr,
-          diasSemana: ehEspecial ? grupo : diasSemana,
-          grupo: grupo.toUpperCase(),
-          responsaveis: responsaveis.trim(),
-          observacao: ehEspecial ? grupo : (mapaColunas['observacao'] !== undefined ? cells[mapaColunas['observacao']] : ''),
-          ehEspecial,
-        };
-
-        registros.push({
-          idTemp: itemFinal.id,
-          mes: mesContextoAtual,
-          data: `${diasStr} de ${mesContextoAtual}`,
-          diaSemanaCalculado: itemFinal.diasSemana,
-          dadosFormatados: {
-            'Intervalo de Dias': `${itemFinal.dias} de ${itemFinal.mes}`,
-            'Grupo Encarregado': itemFinal.grupo,
-            'Reuniões': itemFinal.diasSemana,
-            'Responsáveis': itemFinal.responsaveis || '—',
-          },
-          itemFinal,
-          avisos: avisosLinha,
-        });
-      }
-
-      contagem[mesContextoAtual] = (contagem[mesContextoAtual] || 0) + 1;
-    }
-
-    // Identifica se há registros duplicados na própria planilha
-    const datasVistas = new Set<string>();
-    registros.forEach((r) => {
-      if (datasVistas.has(r.data)) {
-        validacoes.push({
-          mes: r.mes,
-          data: r.data,
-          campo: 'Duplicidade',
-          motivo: `A data ${r.data} aparece repetida mais de uma vez na planilha.`,
-          gravidade: 'alerta',
-        });
-      }
-      datasVistas.add(r.data);
-    });
-
-    // Verifica conflitos com dados já existentes no aplicativo
-    let totalConflitos = 0;
-    if (modulo === 'designacoes') {
-      const atuais = getStoredEscalaDesignacoes();
-      const chavesMeses = new Set(mesesSelecionados.map(normalizar));
-      totalConflitos = atuais.filter((a) => chavesMeses.has(a.mesChave)).length;
-    } else if (modulo === 'discursos') {
-      const atuais = getStoredDiscursosBiblicos();
-      const mesesSel = new Set(mesesSelecionados.map((m) => m.toLowerCase()));
-      totalConflitos = atuais.filter((d) => mesesSel.has(d.mes.toLowerCase())).length;
-    } else if (modulo === 'campo') {
-      const atuais = getStoredCampoProgramacao();
-      const datasPlanilha = new Set(registros.map((r) => r.data));
-      totalConflitos = atuais.filter((c) => datasPlanilha.has(c.data)).length;
-    } else if (modulo === 'limpeza') {
-      const atuais = getStoredLimpezaEscalas();
-      const chavesMeses = new Set(mesesSelecionados.map(normalizar));
-      totalConflitos = atuais.filter((l) => chavesMeses.has(l.mesChave)).length;
-    } else if (modulo === 'vida-ministerio') {
-      const atuais = getStoredS140TSemanas();
-      totalConflitos = atuais.filter((s) =>
-        mesesSelecionados.some((m) =>
-          (s.periodo || '').toLowerCase().includes(m.toLowerCase())
-        )
-      ).length;
     }
 
     return {
-      registrosProcessados: registros,
-      inconsistencias: validacoes,
-      contagemPorMes: contagem,
-      conflitosExistentes: totalConflitos,
+      registrosProcessados: [],
+      inconsistencias: [],
+      contagemPorMes: {},
+      conflitosExistentes: 0,
     };
-  }, [isPdf, itensPdfExtraidos, linhasBrutas, mesesSelecionados, modulo]);
+  }, [itensPdfExtraidos, mesesSelecionados, modulo]);
 
   // Executa a confirmação e salvamento definitivo dos dados
   const handleConfirmarImportacao = async () => {
@@ -1096,27 +822,15 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         {/* Cabeçalho do Modal */}
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div
-              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                modulo === 'vida-ministerio'
-                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-              }`}
-            >
-              {modulo === 'vida-ministerio' ? (
-                <FileText className="h-5 w-5" />
-              ) : (
-                <FileSpreadsheet className="h-5 w-5" />
-              )}
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+              <FileText className="h-5 w-5" />
             </div>
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
                 Modo Responsável
               </span>
               <h2 className="text-sm sm:text-base font-black uppercase text-slate-900 dark:text-white">
-                {modulo === 'vida-ministerio'
-                  ? 'IMPORTAR PROGRAMAÇÃO PDF — VIDA E MINISTÉRIO'
-                  : `IMPORTAR PROGRAMAÇÃO — ${metaDepartamento.titulo.toUpperCase()}`}
+                IMPORTAR PROGRAMAÇÃO PDF — {metaDepartamento.titulo.toUpperCase()}
               </h2>
             </div>
           </div>
@@ -1164,7 +878,7 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
               <input
                 type="file"
                 ref={fileInputRef}
-                accept={modulo === 'vida-ministerio' ? '.pdf,application/pdf' : '.pdf, .xlsx, .xls, .csv'}
+                accept=".pdf,application/pdf"
                 onChange={(e) => e.target.files && handleCarregarArquivo(e.target.files[0])}
                 className="hidden"
               />
@@ -1173,10 +887,10 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
                     <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 mb-3">
-                      {isPdf ? <FileText className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+                      <FileText className="h-6 w-6" />
                     </div>
                     <p className="text-base font-extrabold text-emerald-800 dark:text-emerald-300">
-                      ✓ {isPdf ? 'Documento PDF interpretado com sucesso' : 'Planilha carregada com sucesso'}
+                      ✓ Documento PDF interpretado com sucesso
                     </p>
                     <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 font-medium truncate max-w-xs mx-auto">
                       {nomeArquivo}
@@ -1186,7 +900,16 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>
                           {itensPdfExtraidos.length}{' '}
-                          {modulo === 'vida-ministerio' ? 'semanas de reunião' : 'reuniões / designações'} detectadas
+                          {modulo === 'vida-ministerio'
+                            ? 'semanas de reunião'
+                            : modulo === 'discursos'
+                            ? 'discursos'
+                            : modulo === 'campo'
+                            ? 'saídas de campo'
+                            : modulo === 'limpeza'
+                            ? 'escalas de limpeza'
+                            : 'reuniões / designações'}{' '}
+                          detectadas
                         </span>
                       </div>
                     )}
@@ -1226,59 +949,30 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-8 text-center hover:border-blue-500 hover:bg-blue-50/20 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800/40"
                   >
-                    {modulo === 'vida-ministerio' ? (
-                      <>
-                        <div className="flex items-center justify-center mb-3">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 border border-purple-200 dark:bg-purple-950/70 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-xs">
-                            <FileText className="h-6 w-6" />
-                          </div>
-                        </div>
-                        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
-                          Selecionar Arquivo PDF da Programação
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-sm">
-                          Selecione o arquivo oficial em PDF (Apostila da Reunião ou Formulário S-140-T de Vida e Ministério).
-                        </p>
-                        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
-                            <FileText className="h-3 w-3" />
-                            Apenas Arquivo PDF (Apostila / S-140-T)
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-50 border border-purple-200 dark:bg-purple-950/60 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-xs">
-                            <FileText className="h-5 w-5" />
-                          </div>
-                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 shadow-xs">
-                            <FileSpreadsheet className="h-5 w-5" />
-                          </div>
-                        </div>
-                        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
-                          Selecionar Arquivo PDF ou Planilha
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-xs">
-                          Envie a folha de designações em PDF ou planilha Excel (.xlsx, .xls, .csv)
-                        </p>
-                        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
-                            <FileText className="h-3 w-3" />
-                            PDF (Escala)
-                          </span>
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            <FileSpreadsheet className="h-3 w-3" />
-                            Planilha Excel / CSV
-                          </span>
-                        </div>
-                      </>
-                    )}
+                    <div className="flex items-center justify-center mb-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 border border-purple-200 dark:bg-purple-950/70 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-xs">
+                        <FileText className="h-6 w-6" />
+                      </div>
+                    </div>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                      Selecionar Arquivo PDF da Programação
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+                      {modulo === 'vida-ministerio'
+                        ? 'Selecione o arquivo oficial em PDF (Apostila da Reunião ou Formulário S-140-T de Vida e Ministério).'
+                        : `Selecione o arquivo oficial da programação de ${metaDepartamento.titulo} em formato PDF (.pdf).`}
+                    </p>
+                    <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-purple-100 px-2.5 py-1 text-[11px] font-bold text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+                        <FileText className="h-3 w-3" />
+                        Apenas Arquivo PDF (.pdf)
+                      </span>
+                    </div>
 
                     {isProcessandoArquivo && (
                       <div className="mt-4 flex flex-col items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-                        <span>{mensagemProgresso || 'Processando arquivo...'}</span>
+                        <span>{mensagemProgresso || 'Processando arquivo PDF...'}</span>
                       </div>
                     )}
                   </div>

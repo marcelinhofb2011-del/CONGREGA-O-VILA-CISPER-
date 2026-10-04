@@ -1,79 +1,69 @@
 import React from 'react';
+import { NAV_ITEMS, ADMIN_NAV_ITEMS } from '../navigation';
 import { ScreenId } from '../types';
-import { NAV_ITEMS } from '../navigation';
-import { Lock } from 'lucide-react';
 
 interface SidebarProps {
   currentScreen: ScreenId;
-  onSelectScreen: (screen: ScreenId) => void;
+  onNavigate: (screen: ScreenId) => void;
+  isAdmin: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  currentScreen,
-  onSelectScreen,
-}) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, isAdmin }) => {
   return (
-    <aside
-      id="desktop-sidebar"
-      aria-label="Menu principal de navegação"
-      className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/80 lg:flex"
-    >
-      <div className="mb-4 px-3">
-        <span className="text-xs font-black tracking-wider uppercase text-slate-500 dark:text-slate-400">
-          Menu Principal
-        </span>
+    <aside className="hidden lg:flex w-64 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 h-[calc(100vh-4rem)] sticky top-16 overflow-y-auto p-4">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-3">
+        Navegação Principal
       </div>
-
-      {/* Lista direta e simples dos 8 módulos, sem submenus */}
-      <nav className="flex-1 space-y-1.5 overflow-y-auto">
+      <nav className="space-y-1">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = currentScreen === item.id;
-
           return (
             <button
               key={item.id}
-              id={`sidebar-item-${item.id}`}
               type="button"
-              onClick={() => onSelectScreen(item.id)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm font-bold transition-all ${
+              onClick={() => onNavigate(item.id)}
+              className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-all ${
                 isActive
-                  ? 'bg-slate-900 text-white shadow-xs dark:bg-slate-100 dark:text-slate-900'
-                  : 'text-slate-700 hover:bg-slate-200/70 dark:text-slate-200 dark:hover:bg-slate-800/70'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
               }`}
             >
-              <Icon
-                className={`h-5 w-5 shrink-0 ${
-                  isActive
-                    ? 'text-amber-400 dark:text-amber-600'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              />
+              <Icon className="h-4 w-4 shrink-0" />
               <span className="truncate">{item.label}</span>
             </button>
           );
         })}
       </nav>
 
-      {/* Área dos Responsáveis - Protegida e acessível aos autorizados */}
-      <div className="mt-auto border-t border-slate-200 pt-4 dark:border-slate-800 px-1 space-y-2">
-        <button
-          id="sidebar-item-admin"
-          type="button"
-          onClick={() => onSelectScreen('administracao')}
-          className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition-colors ${
-            currentScreen === 'administracao'
-              ? 'bg-amber-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800/60'
-          }`}
-        >
-          <Lock className="h-4 w-4 shrink-0" />
-          <span>Área dos Responsáveis</span>
-        </button>
-        <p className="px-2 text-[11px] text-slate-400 dark:text-slate-500">
-          Congregação Vila Cisper
-        </p>
-      </div>
+      {isAdmin && (
+        <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-2 px-3">
+            Administração
+          </div>
+          <nav className="space-y-1">
+            {ADMIN_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentScreen === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-all ${
+                    isActive
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      )}
     </aside>
   );
 };

@@ -1,6 +1,8 @@
 {
-  "name": "CONGREGAÇÃO VILA CISPER",
-  "description": "Quadro Digital da Congregação Vila Cisper para consulta da programação, designações, serviço de campo e avisos.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Vila Cisper - Quadro de Anúncios e Programação",
+  "description": "Quadro digital oficial da Congregação Vila Cisper - 67744",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "permissions": []
 }

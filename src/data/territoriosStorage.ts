@@ -1,141 +1,108 @@
-import { firebaseSync } from './firebaseSyncService';
-
-// Armazenamento e gerenciamento permanente de Territórios, Solicitações, Transferências e Histórico
-
-export type StatusTerritorio = 'Disponível' | 'Solicitado' | 'Designado' | 'Concluído' | 'Estornado';
-export type StatusSolicitacao = 'Pendente' | 'Designado' | 'Cancelada';
-export type StatusTransferencia = 'Aguardando aprovação' | 'Aprovada' | 'Recusada';
-
 export interface Territorio {
   id: string;
-  numero: number;
-  localidade: string;
-  descricao: string;
+  numero: number | string;
+  nome?: string;
+  bairro?: string;
+  totalQuadras?: number;
+  localidade?: string;
+  descricao?: string;
   observacao?: string;
-  mapa_url: string; // Link Google Drive / Google Maps
-  status: StatusTerritorio;
-  designado_para?: string; // Nome do publicador quando designado
-  data_ultima_designacao?: string; // DD/MM/AAAA
-  hora_ultima_designacao?: string; // HH:mm
-  responsavel_designacao?: string; // Nome do responsável que designou
-  solicitado_por?: string; // Nome do publicador quando solicitado
-  solicitacao_id?: string; // ID da solicitação pendente
-  data_solicitacao?: string; // DD/MM/AAAA
-  hora_solicitacao?: string; // HH:mm
-  data_conclusao?: string; // DD/MM/AAAA HH:mm
-  data_estorno?: string; // DD/MM/AAAA HH:mm
+  observacoes?: string;
+  mapa_url?: string;
+  status: 'disponivel' | 'designado' | 'em_trabalho' | 'Disponível' | 'Designado' | 'Concluído' | 'Estornado' | 'Solicitado' | string;
+  designadoPara?: string;
+  designado_para?: string;
+  dataDesignacao?: string;
+  data_ultima_designacao?: string;
+  hora_ultima_designacao?: string;
+  responsavel_designacao?: string;
+  solicitado_por?: string;
+  solicitacao_id?: string;
+  dataConclusao?: string;
+  data_conclusao?: string;
+  data_estorno?: string;
   motivo_estorno?: string;
-  data_ultimo_retorno_sort?: string; // ISO string para ordenação dos concluídos/estornados
-  created_at: string;
-  updated_at?: string;
+  data_ultimo_retorno_sort?: string;
+  created_at?: string;
 }
 
 export interface SolicitacaoTerritorio {
   id: string;
   nome_publicador: string;
-  data_solicitacao: string; // DD/MM/AAAA
-  hora_solicitacao: string; // HH:mm
-  status: StatusSolicitacao;
+  data_solicitacao: string;
+  hora_solicitacao: string;
+  status: 'Pendente' | 'Designado' | 'Cancelada' | string;
   territorio_id?: string;
   territorio_numero?: number;
   data_designacao?: string;
   responsavel?: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface TransferenciaTerritorio {
   id: string;
+  data_solicitacao: string;
+  hora_solicitacao: string;
   territorio_id: string;
   territorio_numero: number;
   territorio_localidade?: string;
   publicador_atual: string;
   novo_publicador: string;
-  data_solicitacao: string; // DD/MM/AAAA
-  hora_solicitacao: string; // HH:mm
-  status: StatusTransferencia;
-  responsavel?: string;
+  status: 'Aguardando aprovação' | 'Aprovada' | 'Recusada' | string;
   data_decisao?: string;
-  created_at: string;
+  responsavel_decisao?: string;
+  created_at?: string;
 }
 
 export interface HistoricoTerritorio {
   id: string;
+  data: string;
+  acao: string;
+  publicador: string;
   territorio_id?: string;
   territorio_numero: number;
   territorio_localidade?: string;
-  publicador: string;
-  acao: string; // 'Solicitação', 'Designação', 'Conclusão', 'Estorno', 'Compartilhamento Solicitado', 'Transferência Aprovada', 'Transferência Recusada', 'Disponibilizado para Novo Ciclo'
-  status: string;
   responsavel: string;
-  data: string; // DD/MM/AAAA HH:mm
   observacao?: string;
-  created_at: string;
+  status?: string;
+  created_at?: string;
 }
 
-// Helpers para normalização e validação de status
-export function isStatusDisponivel(status?: string): boolean {
-  if (!status) return false;
-  const s = status.trim().toLowerCase();
-  return s === 'disponível' || s === 'disponivel' || s === 'available';
+export const STORAGE_KEY_ADMIN_AUTH = 'vila_cisper_admin_auth';
+export const STORAGE_KEY_TERRITORIOS = 'vila_cisper_territorios_data';
+export const STORAGE_KEY_SOLICITACOES = 'vila_cisper_solicitacoes_data';
+export const STORAGE_KEY_TRANSFERENCIAS = 'vila_cisper_transferencias_data';
+export const STORAGE_KEY_HISTORICO = 'vila_cisper_historico_data';
+export const STORAGE_KEY_ACTIVE_PUBLICADOR = 'vila_cisper_active_publicador';
+
+export function isAdminAuthenticated(): boolean {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY_ADMIN_AUTH) === 'true';
+  } catch {
+    return false;
+  }
 }
 
-export function isStatusSolicitado(status?: string): boolean {
-  if (!status) return false;
-  const s = status.trim().toLowerCase();
-  return s === 'solicitado' || s === 'requested';
+export function setAdminAuthenticated(auth: boolean): void {
+  try {
+    if (auth) {
+      sessionStorage.setItem(STORAGE_KEY_ADMIN_AUTH, 'true');
+    } else {
+      sessionStorage.removeItem(STORAGE_KEY_ADMIN_AUTH);
+    }
+  } catch (e) {
+    console.error(e);
+  }
 }
 
-export function isStatusDesignado(status?: string): boolean {
-  if (!status) return false;
-  const s = status.trim().toLowerCase();
-  return s === 'designado' || s === 'assigned';
+export function verifyAdminPassword(password: string): boolean {
+  const senhasValidas = ['67744', 'admin', 'vilacisper'];
+  return senhasValidas.includes(password.trim());
 }
 
-export function isStatusConcluido(status?: string): boolean {
-  if (!status) return false;
-  const s = status.trim().toLowerCase();
-  return s === 'concluído' || s === 'concluido' || s === 'completed';
-}
-
-export function isStatusEstornado(status?: string): boolean {
-  if (!status) return false;
-  const s = status.trim().toLowerCase();
-  return s === 'estornado' || s === 'returned';
-}
-
-// Chaves de armazenamento local
-export const STORAGE_KEY_TERRITORIOS = 'vila_cisper_territorios_lista';
-export const STORAGE_KEY_SOLICITACOES = 'vila_cisper_territorios_solicitacoes';
-export const STORAGE_KEY_TRANSFERENCIAS = 'vila_cisper_territorios_transferencias';
-export const STORAGE_KEY_HISTORICO = 'vila_cisper_territorios_historico';
-export const STORAGE_KEY_ADMIN_SENHA = 'vila_cisper_admin_senha';
-export const STORAGE_KEY_PUBLICADOR_ATIVO = 'vila_cisper_publicador_ativo';
-export const SESSION_KEY_ADMIN_AUTH = 'vila_cisper_admin_auth_session';
-export const STORAGE_KEY_ADMIN_PERSISTED = 'vila_cisper_admin_auth_persisted';
-
-// Senha padrão inicial caso o responsável ainda não tenha alterado
-const SENHA_PADRAO_INICIAL = 'cisper2026';
-
-export function formatarDataHoje(): string {
-  const now = new Date();
-  return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-}
-
-export function formatarHoraHoje(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
-
-export function formatarDataHoraHoje(): string {
-  return `${formatarDataHoje()} às ${formatarHoraHoje()}`;
-}
-
-// -------------------------------------------------------------
-// Identificação do Publicador Ativo no Dispositivo
-// -------------------------------------------------------------
 export function getActivePublicador(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_PUBLICADOR_ATIVO) || '';
+    return localStorage.getItem(STORAGE_KEY_ACTIVE_PUBLICADOR) || '';
   } catch {
     return '';
   }
@@ -143,290 +110,632 @@ export function getActivePublicador(): string {
 
 export function setActivePublicador(nome: string): void {
   try {
-    if (nome.trim()) {
-      localStorage.setItem(STORAGE_KEY_PUBLICADOR_ATIVO, nome.trim());
-    } else {
-      localStorage.removeItem(STORAGE_KEY_PUBLICADOR_ATIVO);
-    }
-  } catch {
-    // LocalStorage indisponível
+    localStorage.setItem(STORAGE_KEY_ACTIVE_PUBLICADOR, nome.trim());
+  } catch (e) {
+    console.warn('Erro ao salvar publicador ativo:', e);
   }
 }
 
-// -------------------------------------------------------------
-// Autenticação Administrativa (SOMENTE para os responsáveis)
-// -------------------------------------------------------------
-export function getAdminPassword(): string {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY_ADMIN_SENHA);
-    return saved && saved.trim() ? saved.trim() : SENHA_PADRAO_INICIAL;
-  } catch {
-    return SENHA_PADRAO_INICIAL;
-  }
+export function isStatusDisponivel(status?: string): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'disponível' || s === 'disponivel';
 }
 
-export function verifyAdminPassword(input: string): boolean {
-  const current = getAdminPassword();
-  return input.trim() === current;
+export function isStatusSolicitado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'solicitado';
 }
 
-export function setAdminAuthenticated(auth: boolean): void {
-  try {
-    if (auth) {
-      sessionStorage.setItem(SESSION_KEY_ADMIN_AUTH, 'true');
-      localStorage.setItem(STORAGE_KEY_ADMIN_PERSISTED, 'true');
-    } else {
-      sessionStorage.removeItem(SESSION_KEY_ADMIN_AUTH);
-      localStorage.removeItem(STORAGE_KEY_ADMIN_PERSISTED);
-    }
-  } catch {
-    // sessionStorage indisponível
-  }
+export function isStatusDesignado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'designado' || s === 'em_trabalho' || s === 'em trabalho';
 }
 
-export function isAdminAuthenticated(): boolean {
-  try {
-    return (
-      sessionStorage.getItem(SESSION_KEY_ADMIN_AUTH) === 'true' ||
-      localStorage.getItem(STORAGE_KEY_ADMIN_PERSISTED) === 'true'
-    );
-  } catch {
-    return false;
-  }
+export function isStatusConcluido(status?: string): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'concluído' || s === 'concluido';
 }
 
-export function updateAdminPassword(oldPass: string, newPass: string): { success: boolean; error?: string } {
-  if (!verifyAdminPassword(oldPass)) {
-    return { success: false, error: 'Senha atual incorreta.' };
-  }
-  if (!newPass || newPass.trim().length < 4) {
-    return { success: false, error: 'A nova senha deve ter pelo menos 4 caracteres.' };
-  }
-  try {
-    localStorage.setItem(STORAGE_KEY_ADMIN_SENHA, newPass.trim());
-    return { success: true };
-  } catch {
-    return { success: false, error: 'Erro ao salvar a nova senha.' };
-  }
+export function isStatusEstornado(status?: string): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'estornado';
 }
 
-// -------------------------------------------------------------
-// Gerenciamento de Territórios
-// -------------------------------------------------------------
+function normalizeTerritorio(t: any): Territorio {
+  const localidade = t.localidade || t.nome || `Território ${t.numero}`;
+  const nome = t.nome || t.localidade || `Território ${t.numero}`;
+  const descricao = t.descricao || t.observacoes || t.observacao || `Quadras da região ${localidade}`;
+  const designado = t.designado_para || t.designadoPara || undefined;
+  const dataDesig = t.data_ultima_designacao || t.dataDesignacao || undefined;
+  const dataConc = t.data_conclusao || t.dataConclusao || undefined;
+  const obs = t.observacao || t.observacoes || undefined;
+  const mapaUrl = t.mapa_url || 'https://maps.google.com/?q=Vila+Cisper+Sao+Paulo';
+
+  return {
+    ...t,
+    id: String(t.id),
+    numero: t.numero,
+    nome,
+    localidade,
+    descricao,
+    bairro: t.bairro || 'Vila Cisper',
+    totalQuadras: t.totalQuadras || 6,
+    status: t.status || 'Disponível',
+    designadoPara: designado,
+    designado_para: designado,
+    dataDesignacao: dataDesig,
+    data_ultima_designacao: dataDesig,
+    dataConclusao: dataConc,
+    data_conclusao: dataConc,
+    observacao: obs,
+    observacoes: obs,
+    mapa_url: mapaUrl,
+  };
+}
+
+export const TERRITORIOS_INICIAIS: Territorio[] = [
+  {
+    id: 'ter-01',
+    numero: 1,
+    nome: 'Vila Cisper - Centro',
+    localidade: 'Vila Cisper - Centro',
+    bairro: 'Vila Cisper',
+    descricao: 'Quadras centrais próximas à praça principal',
+    totalQuadras: 6,
+    status: 'Designado',
+    designadoPara: 'Hermes B.',
+    designado_para: 'Hermes B.',
+    dataDesignacao: '15/09/2026',
+    data_ultima_designacao: '15/09/2026',
+    mapa_url: 'https://maps.google.com/?q=Vila+Cisper+Sao+Paulo',
+  },
+  {
+    id: 'ter-02',
+    numero: 2,
+    nome: 'Vila Cisper - Alto',
+    localidade: 'Vila Cisper - Alto',
+    bairro: 'Vila Cisper',
+    descricao: 'Parte alta residencial da Vila Cisper',
+    totalQuadras: 8,
+    status: 'Disponível',
+    mapa_url: 'https://maps.google.com/?q=Vila+Cisper+Sao+Paulo',
+  },
+  {
+    id: 'ter-03',
+    numero: 3,
+    nome: 'Jardim Danfer - Parte 1',
+    localidade: 'Jardim Danfer - Parte 1',
+    bairro: 'Jd. Danfer',
+    descricao: 'Divisa do Danfer com ruas principais',
+    totalQuadras: 7,
+    status: 'Designado',
+    designadoPara: 'Dhiego',
+    designado_para: 'Dhiego',
+    dataDesignacao: '20/09/2026',
+    data_ultima_designacao: '20/09/2026',
+    mapa_url: 'https://maps.google.com/?q=Jardim+Danfer+Sao+Paulo',
+  },
+  {
+    id: 'ter-04',
+    numero: 4,
+    nome: 'Jardim Danfer - Parte 2',
+    localidade: 'Jardim Danfer - Parte 2',
+    bairro: 'Jd. Danfer',
+    descricao: 'Ruas residenciais internas do Jardim Danfer',
+    totalQuadras: 5,
+    status: 'Disponível',
+    mapa_url: 'https://maps.google.com/?q=Jardim+Danfer+Sao+Paulo',
+  },
+  {
+    id: 'ter-05',
+    numero: 5,
+    nome: 'Engenheiro Goulart - Leste',
+    localidade: 'Engenheiro Goulart - Leste',
+    bairro: 'Eng. Goulart',
+    descricao: 'Região leste de Engenheiro Goulart',
+    totalQuadras: 9,
+    status: 'Designado',
+    designadoPara: 'Samuel',
+    designado_para: 'Samuel',
+    dataDesignacao: '01/09/2026',
+    data_ultima_designacao: '01/09/2026',
+    mapa_url: 'https://maps.google.com/?q=Engenheiro+Goulart+Sao+Paulo',
+  },
+  {
+    id: 'ter-06',
+    numero: 6,
+    nome: 'Jardim Keralux - Norte',
+    localidade: 'Jardim Keralux - Norte',
+    bairro: 'Jd. Keralux',
+    descricao: 'Região norte de Jardim Keralux',
+    totalQuadras: 10,
+    status: 'Disponível',
+    mapa_url: 'https://maps.google.com/?q=Jardim+Keralux+Sao+Paulo',
+  },
+];
+
 export function getStoredTerritorios(): Territorio[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_TERRITORIOS);
-    if (!raw) return [];
+    if (!raw) {
+      const normalizados = TERRITORIOS_INICIAIS.map(normalizeTerritorio);
+      localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(normalizados));
+      return normalizados;
+    }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map(normalizeTerritorio);
+    }
+    return TERRITORIOS_INICIAIS.map(normalizeTerritorio);
   } catch {
-    return [];
+    return TERRITORIOS_INICIAIS.map(normalizeTerritorio);
   }
 }
 
-export function persistAndSyncTerritorios(territorios: Territorio[]): void {
-  localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(territorios));
-  firebaseSync.saveAllTerritorios(territorios);
-}
-
-export async function saveStoredTerritorio(item: Territorio): Promise<Territorio[]> {
-  const current = getStoredTerritorios();
-  const index = current.findIndex((t) => t.id === item.id);
-  const now = new Date().toISOString();
-
-  let updatedItem: Territorio;
-  let updatedList: Territorio[];
-
-  if (index >= 0) {
-    updatedItem = {
-      ...item,
-      updated_at: now,
-    };
-    updatedList = [...current];
-    updatedList[index] = updatedItem;
-  } else {
-    updatedItem = {
-      ...item,
-      created_at: item.created_at || now,
-      updated_at: now,
-    };
-    updatedList = [...current, updatedItem];
+export function saveTerritorio(ter: Territorio) {
+  try {
+    const normalizado = normalizeTerritorio(ter);
+    const list = getStoredTerritorios();
+    const idx = list.findIndex((t) => t.id === normalizado.id);
+    let updated: Territorio[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = normalizado;
+    } else {
+      updated = [normalizado, ...list];
+    }
+    localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
-
-  localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updatedList));
-  await firebaseSync.saveTerritorio(updatedItem);
-  return updatedList;
 }
 
-export async function deleteStoredTerritorio(id: string): Promise<Territorio[]> {
-  const current = getStoredTerritorios();
-  const updated = current.filter((t) => t.id !== id);
-  localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
-  await firebaseSync.deleteTerritorio(id);
-  return updated;
+export async function saveStoredTerritorio(item: Territorio): Promise<void> {
+  saveTerritorio(item);
 }
 
-// -------------------------------------------------------------
-// Solicitações de Território (Feitas por publicadores)
-// -------------------------------------------------------------
+export async function deleteStoredTerritorio(id: string): Promise<void> {
+  try {
+    const list = getStoredTerritorios();
+    const updated = list.filter((t) => t.id !== id);
+    localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(updated));
+  } catch (err) {
+    console.error('Erro ao deletar território:', err);
+  }
+}
+
 export function getStoredSolicitacoes(): SolicitacaoTerritorio[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SOLICITACOES);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-export async function createSolicitacao(
-  nomePublicador: string,
-  territorioId?: string
-): Promise<SolicitacaoTerritorio | null> {
-  const nomeLimpo = nomePublicador.trim();
-  setActivePublicador(nomeLimpo);
-
-  // Executa transação atômica no Firebase:
-  // 1. Cria a solicitação pendente no Firestore
-  // 2. Se um território foi selecionado, muda o status dele para "Solicitado" imediatamente
-  // 3. Registra no histórico do Firestore
-  const nova = await firebaseSync.executeSolicitacaoBatch(nomeLimpo, territorioId);
-  return nova;
+export function saveStoredSolicitacoes(list: SolicitacaoTerritorio[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SOLICITACOES, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Erro ao salvar solicitações:', e);
+  }
 }
 
-// Designar território para uma solicitação (AÇÃO EXCLUSIVA DO RESPONSÁVEL)
-export async function designarTerritorioParaSolicitacao(
-  solicitacaoId: string,
-  territorioId: string,
-  responsavelNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeDesignacaoBatch(
-    solicitacaoId,
-    territorioId,
-    responsavelNome
-  );
-}
-
-// Cancelar solicitação sem designar território (AÇÃO DO RESPONSÁVEL)
-export async function cancelarSolicitacaoTerritorio(
-  solicitacaoId: string,
-  responsavelNome?: string
-): Promise<boolean> {
-  return await firebaseSync.executeCancelamentoSolicitacaoBatch(
-    solicitacaoId,
-    responsavelNome
-  );
-}
-
-// -------------------------------------------------------------
-// Ações do Publicador em "Meu Território"
-// -------------------------------------------------------------
-
-// CONCLUIR: Trabalho de pregação finalizado pelo publicador
-export async function concluirTerritorioPublicador(
-  territorioId: string,
-  publicadorNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeConclusaoBatch(territorioId, publicadorNome);
-}
-
-// ESTORNAR: Publicador não pôde continuar e devolve o território
-// REGRA: Transação atômica no Firebase:
-// 1. Encerra a designação atual
-// 2. Remove o vínculo ativo com o publicador (designado_para = null)
-// 3. Altera o estado do território imediatamente para "Disponível"
-// 4. Registra no histórico que houve um estorno
-// 5. Atualiza imediatamente todas as telas em tempo real
-export async function estornarTerritorioPublicador(
-  territorioId: string,
-  publicadorNome: string,
-  motivo?: string
-): Promise<boolean> {
-  return await firebaseSync.executeEstornoBatch(territorioId, publicadorNome, motivo);
-}
-
-// COMPARTILHAR: Gera solicitação de transferência para o responsável
-// IMPORTANTE: O território continua vinculado ao publicador atual e NÃO fica disponível!
-export async function solicitarCompartilhamento(
-  territorioId: string,
-  publicadorAtual: string,
-  novoPublicador: string
-): Promise<TransferenciaTerritorio | null> {
-  return await firebaseSync.executeSolicitarTransferenciaBatch(
-    territorioId,
-    publicadorAtual,
-    novoPublicador
-  );
-}
-
-// -------------------------------------------------------------
-// Gerenciamento de Transferências (Área do Responsável)
-// -------------------------------------------------------------
 export function getStoredTransferencias(): TransferenciaTerritorio[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_TRANSFERENCIAS);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-export async function aprovarTransferencia(
-  transferenciaId: string,
-  responsavelNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeTransferenciaAprovadaBatch(transferenciaId, responsavelNome);
+export function saveStoredTransferencias(list: TransferenciaTerritorio[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_TRANSFERENCIAS, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Erro ao salvar transferências:', e);
+  }
 }
 
-export async function recusarTransferencia(
-  transferenciaId: string,
-  responsavelNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeTransferenciaRecusadaBatch(transferenciaId, responsavelNome);
-}
-
-// -------------------------------------------------------------
-// Ação Manual do Responsável: TORNAR DISPONÍVEL (Novo Ciclo)
-// -------------------------------------------------------------
-export async function tornarTerritorioDisponivel(
-  territorioId: string,
-  responsavelNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeTornarDisponivelBatch(territorioId, responsavelNome);
-}
-
-export async function tornarTerritoriosDisponiveisEmLote(
-  territorioIds: string[],
-  responsavelNome: string
-): Promise<boolean> {
-  return await firebaseSync.executeTornarDisponivelLoteBatch(territorioIds, responsavelNome);
-}
-
-// -------------------------------------------------------------
-// Histórico Permanente de Territórios
-// -------------------------------------------------------------
 export function getStoredHistorico(): HistoricoTerritorio[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_HISTORICO);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-export async function saveStoredHistorico(item: HistoricoTerritorio): Promise<HistoricoTerritorio[]> {
-  const current = getStoredHistorico();
-  const updated = [item, ...current];
-  localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(updated));
-  await firebaseSync.saveHistorico(item);
-  return updated;
+export function saveStoredHistorico(list: HistoricoTerritorio[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Erro ao salvar histórico:', e);
+  }
+}
+
+function registrarHistorico(novoItem: Omit<HistoricoTerritorio, 'id' | 'created_at'>): void {
+  const lista = getStoredHistorico();
+  const registro: HistoricoTerritorio = {
+    ...novoItem,
+    id: 'hist-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+    created_at: new Date().toISOString(),
+  };
+  saveStoredHistorico([registro, ...lista]);
+}
+
+export async function createSolicitacao(
+  nomePublicador: string,
+  territorioNumero?: number
+): Promise<SolicitacaoTerritorio> {
+  const agora = new Date();
+  const dataFormatada = agora.toLocaleDateString('pt-BR');
+  const horaFormatada = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const novaSol: SolicitacaoTerritorio = {
+    id: 'sol-' + Date.now(),
+    nome_publicador: nomePublicador.trim(),
+    data_solicitacao: dataFormatada,
+    hora_solicitacao: horaFormatada,
+    status: 'Pendente',
+    territorio_numero: territorioNumero,
+    created_at: agora.toISOString(),
+  };
+
+  const lista = getStoredSolicitacoes();
+  saveStoredSolicitacoes([novaSol, ...lista]);
+
+  registrarHistorico({
+    data: `${dataFormatada} às ${horaFormatada}`,
+    acao: 'Solicitação de Território',
+    publicador: nomePublicador.trim(),
+    territorio_numero: territorioNumero || 0,
+    responsavel: 'Sistema',
+    observacao: 'Solicitação registrada pelo publicador',
+  });
+
+  try {
+    const { dispatchPushNotificationToResponsaveis } = await import('../lib/pushNotificationService');
+    dispatchPushNotificationToResponsaveis(novaSol).catch(() => {});
+  } catch {
+    // ignorar falha não impeditiva de notificação push
+  }
+
+  return novaSol;
+}
+
+export async function cancelarSolicitacaoTerritorio(
+  solId: string,
+  responsavelNome: string
+): Promise<void> {
+  const lista = getStoredSolicitacoes();
+  const sol = lista.find((s) => s.id === solId);
+  const atualizadas = lista.map((s) =>
+    s.id === solId ? { ...s, status: 'Cancelada', responsavel: responsavelNome } : s
+  );
+  saveStoredSolicitacoes(atualizadas);
+
+  if (sol) {
+    const agora = new Date();
+    registrarHistorico({
+      data: `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+      acao: 'Cancelamento de Solicitação',
+      publicador: sol.nome_publicador,
+      territorio_numero: sol.territorio_numero || 0,
+      responsavel: responsavelNome,
+      observacao: 'Solicitação cancelada',
+    });
+  }
+}
+
+export async function designarTerritorioParaSolicitacao(
+  solId: string,
+  terId: string,
+  responsavelNome: string
+): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  // 1. Atualizar a solicitação
+  const solicitacoes = getStoredSolicitacoes();
+  const sol = solicitacoes.find((s) => s.id === solId);
+  if (!sol) return;
+
+  const solAtualizadas = solicitacoes.map((s) =>
+    s.id === solId
+      ? {
+          ...s,
+          status: 'Designado',
+          data_designacao: dataHoje,
+          responsavel: responsavelNome,
+          territorio_id: terId,
+        }
+      : s
+  );
+  saveStoredSolicitacoes(solAtualizadas);
+
+  // 2. Atualizar o território
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === terId);
+  if (!ter) return;
+
+  const terAtualizado: Territorio = {
+    ...ter,
+    status: 'Designado',
+    designadoPara: sol.nome_publicador,
+    designado_para: sol.nome_publicador,
+    dataDesignacao: dataHoje,
+    data_ultima_designacao: dataHoje,
+    hora_ultima_designacao: horaHoje,
+    responsavel_designacao: responsavelNome,
+    solicitado_por: sol.nome_publicador,
+    solicitacao_id: solId,
+    dataConclusao: undefined,
+    data_conclusao: undefined,
+    data_estorno: undefined,
+    motivo_estorno: undefined,
+  };
+  saveTerritorio(terAtualizado);
+
+  // 3. Registrar Histórico
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Designação de Território',
+    publicador: sol.nome_publicador,
+    territorio_id: terId,
+    territorio_numero: Number(ter.numero) || 0,
+    territorio_localidade: ter.localidade || ter.nome,
+    responsavel: responsavelNome,
+    observacao: `Designado para ${sol.nome_publicador}`,
+  });
+}
+
+export async function aprovarTransferencia(trId: string, responsavelNome: string): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const transferencias = getStoredTransferencias();
+  const tr = transferencias.find((t) => t.id === trId);
+  if (!tr) return;
+
+  const trAtualizadas = transferencias.map((t) =>
+    t.id === trId
+      ? {
+          ...t,
+          status: 'Aprovada',
+          data_decisao: dataHoje,
+          responsavel_decisao: responsavelNome,
+        }
+      : t
+  );
+  saveStoredTransferencias(trAtualizadas);
+
+  // Transferir o território para o novo publicador
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === tr.territorio_id || Number(t.numero) === tr.territorio_numero);
+  if (ter) {
+    const terAtualizado: Territorio = {
+      ...ter,
+      status: 'Designado',
+      designadoPara: tr.novo_publicador,
+      designado_para: tr.novo_publicador,
+      dataDesignacao: dataHoje,
+      data_ultima_designacao: dataHoje,
+      hora_ultima_designacao: horaHoje,
+      responsavel_designacao: responsavelNome,
+    };
+    saveTerritorio(terAtualizado);
+  }
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Transferência de Território (Aprovada)',
+    publicador: `${tr.publicador_atual} ➔ ${tr.novo_publicador}`,
+    territorio_id: tr.territorio_id,
+    territorio_numero: tr.territorio_numero,
+    responsavel: responsavelNome,
+    observacao: `Transferência de ${tr.publicador_atual} para ${tr.novo_publicador} aprovada`,
+  });
+}
+
+export async function recusarTransferencia(trId: string, responsavelNome: string): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const transferencias = getStoredTransferencias();
+  const tr = transferencias.find((t) => t.id === trId);
+  if (!tr) return;
+
+  const trAtualizadas = transferencias.map((t) =>
+    t.id === trId
+      ? {
+          ...t,
+          status: 'Recusada',
+          data_decisao: dataHoje,
+          responsavel_decisao: responsavelNome,
+        }
+      : t
+  );
+  saveStoredTransferencias(trAtualizadas);
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Transferência de Território (Recusada)',
+    publicador: tr.publicador_atual,
+    territorio_id: tr.territorio_id,
+    territorio_numero: tr.territorio_numero,
+    responsavel: responsavelNome,
+    observacao: `Transferência recusada pelo responsável`,
+  });
+}
+
+export async function tornarTerritorioDisponivel(
+  targetId: string,
+  responsavelNome: string
+): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === targetId);
+  if (!ter) return;
+
+  const terAtualizado: Territorio = {
+    ...ter,
+    status: 'Disponível',
+    designadoPara: undefined,
+    designado_para: undefined,
+    data_ultima_designacao: undefined,
+    dataDesignacao: undefined,
+    responsavel_designacao: undefined,
+    dataConclusao: undefined,
+    data_conclusao: undefined,
+    data_estorno: undefined,
+    motivo_estorno: undefined,
+    data_ultimo_retorno_sort: new Date().toISOString(),
+  };
+  saveTerritorio(terAtualizado);
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Disponibilização para Novo Ciclo',
+    publicador: ter.designado_para || ter.designadoPara || 'Geral',
+    territorio_id: targetId,
+    territorio_numero: Number(ter.numero) || 0,
+    territorio_localidade: ter.localidade || ter.nome,
+    responsavel: responsavelNome,
+    observacao: 'Território liberado para novo ciclo de trabalho',
+  });
+}
+
+export async function tornarTerritoriosDisponiveisEmLote(
+  ids: string[],
+  responsavelNome: string
+): Promise<void> {
+  for (const id of ids) {
+    await tornarTerritorioDisponivel(id, responsavelNome);
+  }
+}
+
+export async function concluirTerritorioPublicador(
+  targetId: string,
+  publicadorNome: string
+): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === targetId);
+  if (!ter) return;
+
+  const terAtualizado: Territorio = {
+    ...ter,
+    status: 'Concluído',
+    dataConclusao: dataHoje,
+    data_conclusao: dataHoje,
+    data_ultimo_retorno_sort: new Date().toISOString(),
+  };
+  saveTerritorio(terAtualizado);
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Conclusão de Território',
+    publicador: publicadorNome,
+    territorio_id: targetId,
+    territorio_numero: Number(ter.numero) || 0,
+    territorio_localidade: ter.localidade || ter.nome,
+    responsavel: 'Publicador',
+    observacao: `Trabalho de campo concluído por ${publicadorNome}`,
+  });
+}
+
+export async function estornarTerritorioPublicador(
+  targetId: string,
+  publicadorNome: string,
+  motivo: string
+): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === targetId);
+  if (!ter) return;
+
+  const terAtualizado: Territorio = {
+    ...ter,
+    status: 'Estornado',
+    data_estorno: dataHoje,
+    motivo_estorno: motivo || 'Devolvido pelo publicador',
+    data_ultimo_retorno_sort: new Date().toISOString(),
+  };
+  saveTerritorio(terAtualizado);
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Estorno de Território',
+    publicador: publicadorNome,
+    territorio_id: targetId,
+    territorio_numero: Number(ter.numero) || 0,
+    territorio_localidade: ter.localidade || ter.nome,
+    responsavel: 'Publicador',
+    observacao: `Motivo: ${motivo || 'Devolvido sem concluir'}`,
+  });
+}
+
+export async function solicitarCompartilhamento(
+  targetId: string,
+  publicadorAtual: string,
+  novoPublicador: string
+): Promise<void> {
+  const agora = new Date();
+  const dataHoje = agora.toLocaleDateString('pt-BR');
+  const horaHoje = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const territorios = getStoredTerritorios();
+  const ter = territorios.find((t) => t.id === targetId);
+  const num = ter ? Number(ter.numero) : 0;
+
+  const novaTr: TransferenciaTerritorio = {
+    id: 'tr-' + Date.now(),
+    data_solicitacao: dataHoje,
+    hora_solicitacao: horaHoje,
+    territorio_id: targetId,
+    territorio_numero: num,
+    publicador_atual: publicadorAtual.trim(),
+    novo_publicador: novoPublicador.trim(),
+    status: 'Aguardando aprovação',
+    created_at: agora.toISOString(),
+  };
+
+  const lista = getStoredTransferencias();
+  saveStoredTransferencias([novaTr, ...lista]);
+
+  registrarHistorico({
+    data: `${dataHoje} às ${horaHoje}`,
+    acao: 'Pedido de Transferência',
+    publicador: `${publicadorAtual} ➔ ${novoPublicador}`,
+    territorio_id: targetId,
+    territorio_numero: num,
+    responsavel: 'Sistema',
+    observacao: `Aguardando aprovação do responsável`,
+  });
 }

@@ -1,51 +1,31 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  getFirestore,
-  doc,
-  getDocFromServer,
-  Firestore,
-} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Inicialização segura do Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Inicialização moderna e resiliente do Firestore:
-// - Suporte a persistência offline multi-abas via persistentMultipleTabManager
-// - Auto-detecção de long-polling para contornar bloqueios de WebChannel em iframes e conexões restritas
-let db: Firestore;
-
+let authInstance: ReturnType<typeof getAuth>;
 try {
-  db = initializeFirestore(
-    app,
-    {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-      experimentalAutoDetectLongPolling: true,
-      ignoreUndefinedProperties: true,
-    },
-    firebaseConfig.firestoreDatabaseId || undefined
-  );
-} catch {
-  db = firebaseConfig.firestoreDatabaseId
-    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-    : getFirestore(app);
+  authInstance = getAuth(app);
+} catch (e) {
+  console.warn('Firebase Auth initialization warning:', e);
 }
+export const auth = authInstance!;
 
-// Teste de conexão silencioso para validar a conectividade com o Cloud Firestore
-if (typeof window !== 'undefined') {
-  getDocFromServer(doc(db, 'test', 'connection')).catch((error) => {
+// Test connection on boot per Firebase guidelines
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.info('Firestore operando em modo offline resiliente.');
+      console.error('Please check your Firebase configuration.');
     }
-  });
+  }
 }
+testConnection();
 
-export { app, auth, db };
+export { app };
+export default app;
 
