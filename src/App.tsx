@@ -1,27 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ScreenId, ThemeMode } from './types';
+import React, { useState, useEffect } from 'react';
+import { ScreenId, TextSize, ThemeMode } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BottomNav } from './components/BottomNav';
 import { MobileDrawer } from './components/MobileDrawer';
-
 import { InicioView } from './views/InicioView';
 import { ProgramacaoGeralView } from './views/ProgramacaoGeralView';
 import { DesignacoesView } from './views/DesignacoesView';
 import { VidaEMinisterioView } from './views/VidaEMinisterioView';
-import { ServicoDeCampoView } from './views/ServicoDeCampoView';
 import { LimpezaView } from './views/LimpezaView';
+import { ServicoDeCampoView } from './views/ServicoDeCampoView';
 import { DiscursoPublicoView } from './views/DiscursoPublicoView';
+import { AssistenciaView } from './views/AssistenciaView';
 import { TerritoriosView } from './views/TerritoriosView';
 import { AvisosView } from './views/AvisosView';
-import { ConfiguracoesView } from './views/ConfiguracoesView';
 import { AdminPainelView } from './views/AdminPainelView';
-
-import {
-  isAdminAuthenticated,
-  setAdminAuthenticated,
-  verifyAdminPassword,
-} from './data/territoriosStorage';
+import { SecretarioView } from './views/SecretarioView';
+import { RelatoriosView } from './views/RelatoriosView';
+import { ConfiguracoesView } from './views/ConfiguracoesView';
+import { PlaceholderView } from './views/PlaceholderView';
+import { GlobalAvisoPopUp } from './components/GlobalAvisoPopUp';
+import { usePWA } from './hooks/usePWA';
 
 const VALID_SCREENS: ScreenId[] = [
   'inicio',
@@ -40,70 +39,44 @@ const VALID_SCREENS: ScreenId[] = [
   'configuracoes',
 ];
 
-function getScreenFromUrlOrState(): ScreenId {
-  if (typeof window === 'undefined') return 'inicio';
+const isValidScreenId = (val: any): val is ScreenId => {
+  return typeof val === 'string' && VALID_SCREENS.includes(val as ScreenId);
+};
+
+const getScreenFromUrlOrState = (): ScreenId => {
   try {
+    if (window.history.state && isValidScreenId(window.history.state.screen)) {
+      return window.history.state.screen;
+    }
     const params = new URLSearchParams(window.location.search);
-    const screenParam = (params.get('tela') || params.get('screen')) as ScreenId;
-    if (screenParam && VALID_SCREENS.includes(screenParam)) {
+    const screenParam = params.get('screen');
+    if (isValidScreenId(screenParam)) {
       return screenParam;
     }
-    const stateScreen = window.history.state?.screen as ScreenId;
-    if (stateScreen && VALID_SCREENS.includes(stateScreen)) {
-      return stateScreen;
-    }
-  } catch {
-    // fallback
-  }
+  } catch {}
   return 'inicio';
-}
+};
 
-export const App: React.FC = () => {
+export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(getScreenFromUrlOrState);
-  const [isAdmin, setIsAdmin] = useState<boolean>(isAdminAuthenticated);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
-  const [adminPasswordInput, setAdminPasswordInput] = useState('');
-  const [adminPasswordError, setAdminPasswordError] = useState(false);
+  const { isOnline } = usePWA();
 
-  // Tamanho de Fonte (P, M, G)
-  const [fontSize, setFontSize] = useState<'P' | 'M' | 'G'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vila_cisper_font_size');
-      if (saved === 'P' || saved === 'M' || saved === 'G') return saved;
-    }
-    return 'M';
-  });
-
-  const toggleFontSize = () => {
-    setFontSize((prev) => {
-      const next = prev === 'P' ? 'M' : prev === 'M' ? 'G' : 'P';
-      localStorage.setItem('vila_cisper_font_size', next);
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (fontSize === 'P') {
-      root.style.fontSize = '14px';
-    } else if (fontSize === 'G') {
-      root.style.fontSize = '18px';
-    } else {
-      root.style.fontSize = '16px';
-    }
-  }, [fontSize]);
-
+  // Persistent Theme
   const [theme, setTheme] = useState<ThemeMode>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vila_cisper_theme');
-      if (saved === 'dark' || saved === 'light') return saved;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'light';
+    const saved = localStorage.getItem('vila_cisper_theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
-  // Aplica classe dark no html
+  // Persistent Text Size
+  const [textSize, setTextSize] = useState<TextSize>(() => {
+    const saved = localStorage.getItem('vila_cisper_text_size');
+    if (saved === 'sm' || saved === 'md' || saved === 'lg') return saved;
+    return 'md';
+  });
+
+  // Apply theme to DOM
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
@@ -114,224 +87,153 @@ export const App: React.FC = () => {
     localStorage.setItem('vila_cisper_theme', theme);
   }, [theme]);
 
-  // Inicializa o histórico na montagem
+  // Apply text size to DOM
   useEffect(() => {
+    document.documentElement.setAttribute('data-text-size', textSize);
+    localStorage.setItem('vila_cisper_text_size', textSize);
+  }, [textSize]);
+
+  // Sincronização com o histórico do navegador / PWA e botão Voltar nativo do Android
+  useEffect(() => {
+    // Inicializa a primeira entrada do histórico com a tela atual (evita duplicar entrada no histórico inicial)
     const initialScreen = getScreenFromUrlOrState();
-    setCurrentScreen(initialScreen);
+    const initialUrl = initialScreen === 'inicio' ? '/' : `/?screen=${initialScreen}`;
+    window.history.replaceState({ screen: initialScreen }, '', initialUrl);
 
-    const url = new URL(window.location.href);
-    if (initialScreen === 'inicio') {
-      url.searchParams.delete('tela');
-      url.searchParams.delete('screen');
-    } else {
-      url.searchParams.set('tela', initialScreen);
-    }
-    window.history.replaceState({ screen: initialScreen }, '', url.toString());
-
-    // Suporte ao botão "Voltar" nativo do Android via popstate
-    const handlePopState = (e: PopStateEvent) => {
-      const targetScreen = (e.state?.screen as ScreenId) || 'inicio';
-      if (VALID_SCREENS.includes(targetScreen)) {
-        setCurrentScreen(targetScreen);
+    // Escuta o botão Voltar nativo do Android e histórico do navegador
+    const handlePopState = (event: PopStateEvent) => {
+      let targetScreen: ScreenId = 'inicio';
+      if (event.state && isValidScreenId(event.state.screen)) {
+        targetScreen = event.state.screen;
       } else {
-        setCurrentScreen('inicio');
+        const params = new URLSearchParams(window.location.search);
+        const screenParam = params.get('screen');
+        if (isValidScreenId(screenParam)) {
+          targetScreen = screenParam;
+        }
       }
+      setCurrentScreen(targetScreen);
       setIsDrawerOpen(false);
-      setIsAdmin(isAdminAuthenticated());
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Navegação com pushState para suportar o botão Voltar do Android
-  const navigateToScreen = useCallback(
-    (screen: ScreenId) => {
-      if (screen === currentScreen) {
-        setIsDrawerOpen(false);
-        return;
-      }
-
-      const url = new URL(window.location.href);
-      if (screen === 'inicio') {
-        url.searchParams.delete('tela');
-        url.searchParams.delete('screen');
-      } else {
-        url.searchParams.set('tela', screen);
-      }
-
-      window.history.pushState({ screen }, '', url.toString());
-      setCurrentScreen(screen);
-      setIsDrawerOpen(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-    [currentScreen]
-  );
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  // Navegação que empilha cada tela acessada no histórico do navegador
+  const navigateToScreen = (screen: ScreenId) => {
+    setIsDrawerOpen(false);
+    if (screen === currentScreen) {
+      return;
+    }
+    const targetUrl = screen === 'inicio' ? '/' : `/?screen=${screen}`;
+    window.history.pushState({ screen }, '', targetUrl);
+    setCurrentScreen(screen);
   };
 
-  const handleAdminLogout = () => {
-    setAdminAuthenticated(false);
-    setIsAdmin(false);
-    if (currentScreen === 'administracao') {
+  const handleBackToPublic = () => {
+    if (window.history.state && window.history.state.screen === 'administracao' && window.history.length > 1) {
+      window.history.back();
+    } else {
       navigateToScreen('inicio');
     }
   };
 
-  const handleAdminLoginSuccess = () => {
-    setIsAdmin(true);
-    navigateToScreen('administracao');
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  const handleAdminPasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (verifyAdminPassword(adminPasswordInput)) {
-      setAdminAuthenticated(true);
-      setIsAdmin(true);
-      setShowAdminPasswordModal(false);
-      setAdminPasswordInput('');
-      setAdminPasswordError(false);
-      navigateToScreen('administracao');
-    } else {
-      setAdminPasswordError(true);
-    }
-  };
-
-  const renderContent = () => {
+  const renderActiveScreen = () => {
     switch (currentScreen) {
       case 'inicio':
-        return (
-          <InicioView
-            onNavigate={navigateToScreen}
-            isAdmin={isAdmin}
-            onNavigateToAdmin={() => navigateToScreen('administracao')}
-          />
-        );
+        return <InicioView onNavigate={(screen) => navigateToScreen(screen)} />;
       case 'programacao':
-        return <ProgramacaoGeralView onNavigate={navigateToScreen} />;
+        return <ProgramacaoGeralView />;
       case 'designacoes':
-        return <DesignacoesView isAdmin={isAdmin} />;
+        return <DesignacoesView />;
       case 'vida-e-ministerio':
-        return <VidaEMinisterioView isAdmin={isAdmin} />;
-      case 'servico-de-campo':
-        return <ServicoDeCampoView isAdmin={isAdmin} />;
-      case 'limpeza':
-        return <LimpezaView isAdmin={isAdmin} />;
+        return <VidaEMinisterioView />;
       case 'discurso-publico':
-        return <DiscursoPublicoView isAdmin={isAdmin} />;
+        return <DiscursoPublicoView />;
+      case 'servico-de-campo':
+        return <ServicoDeCampoView />;
+      case 'limpeza':
+        return <LimpezaView />;
       case 'territorios':
-        return (
-          <TerritoriosView
-            isAdmin={isAdmin}
-            onAdminLoginSuccess={handleAdminLoginSuccess}
-          />
-        );
+        return <TerritoriosView />;
       case 'avisos':
-        return <AvisosView isAdmin={isAdmin} />;
-      case 'configuracoes':
-        return <ConfiguracoesView theme={theme} onToggleTheme={toggleTheme} />;
+        return <AvisosView />;
       case 'administracao':
+        return <AdminPainelView onBackToPublic={handleBackToPublic} />;
+      case 'secretario':
+        return <SecretarioView />;
+      case 'relatorios':
+        return <RelatoriosView />;
+      case 'assistencia':
+        return <AssistenciaView />;
+      case 'configuracoes':
         return (
-          <AdminPainelView
-            onNavigate={navigateToScreen}
-            onLogout={handleAdminLogout}
+          <ConfiguracoesView
+            textSize={textSize}
+            onChangeTextSize={setTextSize}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
         );
       default:
-        return (
-          <InicioView
-            onNavigate={navigateToScreen}
-            isAdmin={isAdmin}
-            onNavigateToAdmin={() => navigateToScreen('administracao')}
-          />
-        );
+        return <PlaceholderView screenId={currentScreen} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans antialiased">
+      {/* Header Fixo do Quadro Digital */}
       <Header
-        onOpenMenu={() => setIsDrawerOpen(true)}
-        isAdmin={isAdmin}
-        onOpenAdminLogin={() => setShowAdminPasswordModal(true)}
-        onAdminLogout={handleAdminLogout}
-        theme={theme}
+        currentScreen={currentScreen}
+        onOpenMobileMenu={() => setIsDrawerOpen(true)}
+        isDark={theme === 'dark'}
         onToggleTheme={toggleTheme}
-        fontSize={fontSize}
-        onToggleFontSize={toggleFontSize}
+        isOnline={isOnline}
+        textSize={textSize}
+        onChangeTextSize={setTextSize}
+        onNavigateToAdmin={() => navigateToScreen('administracao')}
       />
 
-      <div className="flex flex-1">
+      {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar
           currentScreen={currentScreen}
-          onNavigate={navigateToScreen}
-          isAdmin={isAdmin}
+          onSelectScreen={(screen) => navigateToScreen(screen)}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl mx-auto w-full">
-          {renderContent()}
+        {/* Main Content Area - Mobile First, pb-20 for standard bottom navigation clearance */}
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 pb-20 sm:pb-24 lg:pb-12 max-w-5xl mx-auto w-full"
+        >
+          {renderActiveScreen()}
         </main>
       </div>
 
+      {/* Navegação Inferior para Celular */}
       <BottomNav
         currentScreen={currentScreen}
-        onNavigate={navigateToScreen}
-        onOpenMore={() => setIsDrawerOpen(true)}
+        onSelectScreen={(screen) => navigateToScreen(screen)}
+        onOpenDrawer={() => setIsDrawerOpen((prev) => !prev)}
+        isDrawerOpen={isDrawerOpen}
       />
 
+      {/* Gaveta de Navegação Mobile Completa */}
       <MobileDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         currentScreen={currentScreen}
-        onNavigate={navigateToScreen}
-        isAdmin={isAdmin}
+        onSelectScreen={(screen) => navigateToScreen(screen)}
       />
 
-      {/* Modal Senha de Acesso Responsável (Cadeado Header) */}
-      {showAdminPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
-              Modo Responsável
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Digite a senha de responsável da Congregação Vila Cisper:
-            </p>
-            <form onSubmit={handleAdminPasswordSubmit} className="space-y-3">
-              <input
-                type="password"
-                placeholder="Senha de acesso (67744)"
-                value={adminPasswordInput}
-                onChange={(e) => setAdminPasswordInput(e.target.value)}
-                autoFocus
-                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-hidden"
-              />
-              {adminPasswordError && (
-                <p className="text-xs text-red-500 font-semibold">Senha incorreta. Tente novamente.</p>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAdminPasswordModal(false)}
-                  className="rounded-xl px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"
-                >
-                  Entrar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Pop-up de Aviso Global em Tempo Real */}
+      <GlobalAvisoPopUp currentScreen={currentScreen} />
     </div>
   );
-};
-
-export default App;
+}

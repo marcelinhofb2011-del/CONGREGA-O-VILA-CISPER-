@@ -1,288 +1,582 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Calendar,
-  Users,
+  CalendarCheck,
   BookOpen,
   Speech,
   Compass,
+  Users,
   Sparkles,
   Map,
-  Bell,
+  AlertTriangle,
   Clock,
-  ArrowRight,
+  Calendar,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 import { ScreenId } from '../types';
-import { getStoredS140TSemanas, S140TSemana, identificarSemanaMaisProxima } from '../data/s140tStorage';
-import { getStoredDesignacoes, DesignacaoItem } from '../data/designacoesStorage';
-import { getHorariosReunioes, HorariosReunioesConfig } from '../data/horariosReunioesStorage';
-
-const bannerImg = '/congregacao_banner.jpg';
+import {
+  getStoredEscalaDesignacoes,
+  EscalaDesignacaoItem,
+  STORAGE_KEY_DESIGNACOES,
+} from '../data/designacoesStorage';
+import {
+  getStoredAvisos,
+  AvisoItem,
+  STORAGE_KEY_AVISOS,
+  STORAGE_KEY_AVISOS_VISUALIZADOS,
+  getAvisosVisualizadosIds,
+  marcarAvisoComoVisualizado,
+} from '../data/avisosStorage';
+import { isAdminAuthenticated } from '../data/territoriosStorage';
+import {
+  getHorariosReunioes,
+  HorariosReunioesConfig,
+  STORAGE_KEY_HORARIOS_REUNIOES,
+  DIAS_SEMANA_MAPA_INDICE,
+} from '../data/horariosReunioesStorage';
+import { parseItemDate } from '../utils/dateUtils';
+import bannerReuniaoOficial from '../assets/images/1011229_univ_pnr_lg.jpg';
 
 interface InicioViewProps {
   onNavigate: (screen: ScreenId) => void;
-  isAdmin: boolean;
-  onNavigateToAdmin: () => void;
 }
 
-export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
-  const [horarios, setHorarios] = useState<HorariosReunioesConfig>(getHorariosReunioes());
-  const [semanaMaisProxima, setSemanaMaisProxima] = useState<S140TSemana | null>(null);
-  const [proximaDesignacao, setProximaDesignacao] = useState<{
-    indicador: string;
-    microfone: string;
-    audioVideo: string;
-    leitor: string;
-  }>({
-    indicador: 'Pedro / Danilo C.',
-    microfone: 'Wilmar / Rafael',
-    audioVideo: 'Guilherme / Dhiego',
-    leitor: 'A definir',
-  });
+const DIAS_SEMANA_EXTENSO = [
+  'Domingo',
+  'Segunda-feira',
+  'Terça-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sábado',
+];
 
-  const [dataAtualTexto, setDataAtualTexto] = useState<string>('Quinta-Feira, 1 De Outubro De 2026');
-  const [reuniaoInfo, setReuniaoInfo] = useState<{
-    tipo: string;
-    dataTitulo: string;
-    horario: string;
-  }>({
-    tipo: 'REUNIÃO DE MEIO DE SEMANA',
-    dataTitulo: 'Quinta-feira, 1 de outubro',
-    horario: '20:00',
-  });
+const MESES_EXTENSO = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
+
+export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
+  const [escala, setEscala] = useState<EscalaDesignacaoItem[]>([]);
+  const [avisos, setAvisos] = useState<AvisoItem[]>([]);
+  const [visualizadosIds, setVisualizadosIds] = useState<string[]>([]);
+  const [horariosConfig, setHorariosConfig] = useState<HorariosReunioesConfig>(() =>
+    getHorariosReunioes()
+  );
+
+  // Carregar dados e sincronizar com eventos do storage/Firebase
+  const carregarDados = () => {
+    try {
+      localStorage.removeItem('vila_cisper_layout_acesso');
+    } catch {}
+    setEscala(getStoredEscalaDesignacoes());
+    setAvisos(getStoredAvisos());
+    setVisualizadosIds(getAvisosVisualizadosIds());
+    setHorariosConfig(getHorariosReunioes());
+  };
 
   useEffect(() => {
-    // Atualiza horários configurados
-    const config = getHorariosReunioes();
-    setHorarios(config);
+    carregarDados();
 
-    // Formatação da data atual por extenso
-    try {
-      const hoje = new Date();
-      const diasSemana = [
-        'Domingo',
-        'Segunda-Feira',
-        'Terça-Feira',
-        'Quarta-Feira',
-        'Quinta-Feira',
-        'Sexta-Feira',
-        'Sábado',
-      ];
-      const meses = [
-        'Janeiro',
-        'Fevereiro',
-        'Março',
-        'Abril',
-        'Maio',
-        'Junho',
-        'Julho',
-        'Agosto',
-        'Setembro',
-        'Outubro',
-        'Novembro',
-        'Dezembro',
-      ];
-      const diaSem = diasSemana[hoje.getDay()];
-      const diaNum = hoje.getDate();
-      const mesNome = meses[hoje.getMonth()];
-      const anoNum = hoje.getFullYear();
-      setDataAtualTexto(`${diaSem}, ${diaNum} De ${mesNome} De ${anoNum}`);
-    } catch {
-      setDataAtualTexto('Quinta-Feira, 1 De Outubro De 2026');
-    }
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === STORAGE_KEY_DESIGNACOES ||
+        e.key === STORAGE_KEY_AVISOS ||
+        e.key === STORAGE_KEY_AVISOS_VISUALIZADOS ||
+        e.key === STORAGE_KEY_HORARIOS_REUNIOES ||
+        !e.key
+      ) {
+        carregarDados();
+      }
+    };
 
-    // Carrega dados da Reunião Mais Próxima
-    const semanas = getStoredS140TSemanas();
-    const maisProxima = identificarSemanaMaisProxima(semanas);
-    if (maisProxima) {
-      setSemanaMaisProxima(maisProxima);
-      const diaMeioSemana = config.meioDeSemana?.dia || 'Quinta-feira';
-      const horaMeioSemana = config.meioDeSemana?.horario || '20:00';
-      setReuniaoInfo({
-        tipo: 'REUNIÃO DE MEIO DE SEMANA',
-        dataTitulo: maisProxima.dataReuniao
-          ? `${diaMeioSemana}, ${maisProxima.dataReuniao}`
-          : `${diaMeioSemana} (${maisProxima.periodo})`,
-        horario: horaMeioSemana,
-      });
-    }
+    const handleDesignacoesUpdate = () => {
+      setEscala(getStoredEscalaDesignacoes());
+    };
 
-    // Carrega Designações reais se houver
-    const designacoes = getStoredDesignacoes();
-    if (designacoes.length > 0) {
-      const des = designacoes[0];
-      const ind = [des.indicadorEntrada, des.indicadorAuditorio].filter(Boolean).join(' / ');
-      const mic = [des.microfone1, des.microfone2].filter(Boolean).join(' / ');
-      setProximaDesignacao({
-        indicador: ind || 'Pedro / Danilo C.',
-        microfone: mic || 'Wilmar / Rafael',
-        audioVideo: des.audioVideo || 'Guilherme / Dhiego',
-        leitor: des.leitorSentinela || 'A definir',
-      });
-    }
+    const handleAvisosUpdate = () => {
+      setAvisos(getStoredAvisos());
+    };
+
+    const handleVisualizadosUpdate = (e: CustomEvent<string[]>) => {
+      if (Array.isArray(e.detail)) {
+        setVisualizadosIds(e.detail);
+      } else {
+        setVisualizadosIds(getAvisosVisualizadosIds());
+      }
+    };
+
+    const handleHorariosUpdate = (e: CustomEvent<HorariosReunioesConfig>) => {
+      if (e.detail) {
+        setHorariosConfig(e.detail);
+      } else {
+        setHorariosConfig(getHorariosReunioes());
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('designacoes-firebase-updated', handleDesignacoesUpdate);
+    window.addEventListener('avisos-firebase-updated', handleAvisosUpdate);
+    window.addEventListener(
+      'avisos-visualizados-updated',
+      handleVisualizadosUpdate as EventListener
+    );
+    window.addEventListener(
+      'horarios-reunioes-updated',
+      handleHorariosUpdate as EventListener
+    );
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('designacoes-firebase-updated', handleDesignacoesUpdate);
+      window.removeEventListener('avisos-firebase-updated', handleAvisosUpdate);
+      window.removeEventListener(
+        'avisos-visualizados-updated',
+        handleVisualizadosUpdate as EventListener
+      );
+      window.removeEventListener(
+        'horarios-reunioes-updated',
+        handleHorariosUpdate as EventListener
+      );
+    };
   }, []);
 
-  const acessosPrincipais: { id: ScreenId; label: string; desc: string; icon: any; color: string }[] = [
+  // Fila de avisos ativos que o usuário ainda NÃO confirmou neste dispositivo
+  const avisosNaoVisualizados = useMemo(() => {
+    if (!avisos || avisos.length === 0) return [];
+
+    // O aviso deve aparecer como Pop-up ao abrir o aplicativo para os demais usuários (não para o responsável)
+    if (isAdminAuthenticated()) return [];
+
+    // Filtra apenas avisos ativos (ou sem campo ativo explícito, considerado ativo por padrão)
+    const ativos = avisos.filter((a) => a.ativo !== false);
+
+    // Filtra apenas os que este dispositivo AINDA NÃO visualizou
+    const pendentes = ativos.filter((a) => !visualizadosIds.includes(a.id));
+
+    // Ordena para exibir prioritariamente fixados e depois por data mais recente
+    return pendentes.sort((a, b) => {
+      if (a.fixado && !b.fixado) return -1;
+      if (!a.fixado && b.fixado) return 1;
+
+      const partesA = a.dataPublicacao ? a.dataPublicacao.split('/') : [];
+      const partesB = b.dataPublicacao ? b.dataPublicacao.split('/') : [];
+
+      if (partesA.length === 3 && partesB.length === 3) {
+        const timeA = new Date(
+          parseInt(partesA[2], 10),
+          parseInt(partesA[1], 10) - 1,
+          parseInt(partesA[0], 10)
+        ).getTime();
+        const timeB = new Date(
+          parseInt(partesB[2], 10),
+          parseInt(partesB[1], 10) - 1,
+          parseInt(partesB[0], 10)
+        ).getTime();
+        return timeB - timeA;
+      }
+      return 0;
+    });
+  }, [avisos, visualizadosIds]);
+
+  // Exibe exatamente o primeiro aviso não visualizado da fila (um por vez)
+  const avisoAtualPopUp = avisosNaoVisualizados.length > 0 ? avisosNaoVisualizados[0] : null;
+
+  // Ao clicar em ENTENDI: marca como visualizado de forma permanente no dispositivo
+  // e avança automaticamente para o próximo não visualizado (se houver)
+  const handleEntendiAviso = (id: string) => {
+    marcarAvisoComoVisualizado(id);
+    setVisualizadosIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  // 1. Data Atual de Maneira Simples
+  const dataAtualFormatada = useMemo(() => {
+    const hoje = new Date();
+    const diaSemana = DIAS_SEMANA_EXTENSO[hoje.getDay()];
+    const dia = hoje.getDate();
+    const mes = MESES_EXTENSO[hoje.getMonth()];
+    const ano = hoje.getFullYear();
+    return `${diaSemana}, ${dia} de ${mes} de ${ano}`;
+  }, []);
+
+  // 2. Próxima Reunião
+  const proximaReuniaoInfo = useMemo(() => {
+    if (!escala || escala.length === 0) return null;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const comData = escala
+      .map((item) => ({
+        item,
+        date: parseItemDate(item.dia, item.mes),
+      }))
+      .filter((d): d is { item: EscalaDesignacaoItem; date: Date } => d.date !== null);
+
+    if (comData.length === 0) return null;
+
+    // Filtra reuniões a partir de hoje
+    const futuras = comData
+      .filter((r) => r.date.getTime() >= hoje.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    // Se houver futuras a partir de hoje, pega a primeira; senão, a mais próxima cadastrada
+    const itemAlvo = futuras.length > 0 ? futuras[0] : comData[comData.length - 1];
+    if (!itemAlvo) return null;
+
+    const d = itemAlvo.date;
+    const diaSemana = DIAS_SEMANA_EXTENSO[d.getDay()];
+    const diaMes = `${d.getDate()} de ${MESES_EXTENSO[d.getMonth()]}`;
+
+    const diaIndiceMeio = DIAS_SEMANA_MAPA_INDICE[horariosConfig.meioDeSemana.dia];
+    const diaIndiceFds = DIAS_SEMANA_MAPA_INDICE[horariosConfig.fimDeSemana.dia];
+
+    const ehFimDeSemana = d.getDay() === diaIndiceFds || (d.getDay() !== diaIndiceMeio && (d.getDay() === 0 || d.getDay() === 6));
+    const tipoReuniao = itemAlvo.item.observacao || (ehFimDeSemana
+      ? 'Reunião de fim de semana'
+      : 'Reunião de meio de semana');
+
+    // Horário automático configurado pelos responsáveis
+    const horario = ehFimDeSemana
+      ? horariosConfig.fimDeSemana.horario
+      : horariosConfig.meioDeSemana.horario;
+
+    return {
+      item: itemAlvo.item,
+      tipoReuniao,
+      diaSemana,
+      data: diaMes,
+      dataCompleta: `${diaSemana}, ${diaMes}`,
+      horario,
+    };
+  }, [escala, horariosConfig]);
+
+  // 3. Próximas Designações estruturadas de forma resumida
+  const designacoesResumo = useMemo(() => {
+    if (!proximaReuniaoInfo) return null;
+    const item = proximaReuniaoInfo.item;
+
+    const hasAnyDesignacao = Boolean(
+      (item.indicador && item.indicador.trim()) ||
+      (item.microfone && item.microfone.trim()) ||
+      (item.audio && item.audio.trim()) ||
+      (item.video && item.video.trim()) ||
+      (item.leitor && item.leitor.trim())
+    );
+    if (!hasAnyDesignacao) return null;
+
+    const indicador = item.indicador && item.indicador.trim() ? item.indicador.trim() : 'A definir';
+    const microfone = item.microfone && item.microfone.trim() ? item.microfone.trim() : 'A definir';
+
+    // Áudio e vídeo agrupados conforme especificação
+    let audioVideo = 'A definir';
+    const audio = item.audio?.trim();
+    const video = item.video?.trim();
+    if (audio && video) {
+      audioVideo = audio === video ? audio : `${audio} / ${video}`;
+    } else if (audio) {
+      audioVideo = audio;
+    } else if (video) {
+      audioVideo = video;
+    }
+
+    const leitor = item.leitor && item.leitor.trim() ? item.leitor.trim() : 'A definir';
+
+    return {
+      indicador,
+      microfone,
+      audioVideo,
+      leitor,
+    };
+  }, [proximaReuniaoInfo]);
+
+  // 4. Acessos Principais solicitados (dispostos horizontalmente)
+  const botoesAcessoPrincipal = [
     {
-      id: 'programacao',
-      label: 'Programação Geral',
-      desc: 'Quadro completo e datas de reuniões',
-      icon: Calendar,
-      color: 'bg-blue-600',
+      id: 'btn-acesso-designacoes',
+      label: 'Designação',
+      screen: 'designacoes' as ScreenId,
+      icon: CalendarCheck,
     },
     {
-      id: 'designacoes',
-      label: 'Designações',
-      desc: 'Indicadores, microfones, áudio e vídeo',
-      icon: Users,
-      color: 'bg-indigo-600',
-    },
-    {
-      id: 'vida-e-ministerio',
-      label: 'Vida e Ministério',
-      desc: 'Apostila e programa semanal S-140-T',
+      id: 'btn-acesso-vida-ministerio',
+      label: 'Vida e ministério',
+      screen: 'vida-e-ministerio' as ScreenId,
       icon: BookOpen,
-      color: 'bg-sky-600',
     },
     {
-      id: 'servico-de-campo',
-      label: 'Serviço de Campo',
-      desc: `Saídas e grupos às ${horarios.saidaDeCampo?.horario || '08:00'}`,
-      icon: Compass,
-      color: 'bg-teal-600',
-    },
-    {
-      id: 'discurso-publico',
-      label: 'Discurso Público',
-      desc: 'Temas bíblicos e oradores do fim de semana',
+      id: 'btn-acesso-discurso-publico',
+      label: 'Discurso público',
+      screen: 'discurso-publico' as ScreenId,
       icon: Speech,
-      color: 'bg-amber-600',
     },
     {
-      id: 'limpeza',
-      label: 'Escala de Limpeza',
-      desc: 'Grupos e manutenção do Salão do Reino',
+      id: 'btn-acesso-limpeza',
+      label: 'Grupo de Limpeza',
+      screen: 'limpeza' as ScreenId,
       icon: Sparkles,
-      color: 'bg-emerald-600',
     },
     {
-      id: 'territorios',
-      label: 'Territórios',
-      desc: 'Cartões de quadras e solicitações de campo',
+      id: 'btn-acesso-assistencia',
+      label: 'Assistência',
+      screen: 'assistencia' as ScreenId,
+      icon: Users,
+    },
+    {
+      id: 'btn-acesso-territorios',
+      label: 'Território',
+      screen: 'territorios' as ScreenId,
       icon: Map,
-      color: 'bg-purple-600',
     },
     {
-      id: 'avisos',
-      label: 'Avisos da Congregação',
-      desc: 'Comunicados oficiais e informativos',
-      icon: Bell,
-      color: 'bg-rose-600',
+      id: 'btn-acesso-servico-campo',
+      label: 'Serviço de Campo',
+      screen: 'servico-de-campo' as ScreenId,
+      icon: Compass,
     },
   ];
 
   return (
-    <div className="space-y-5 max-w-xl mx-auto pb-6">
-      {/* Título e Data da Congregação */}
-      <div className="space-y-1">
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white uppercase">
+    <div className="mx-auto w-full max-w-2xl space-y-8 pb-4 pt-2">
+      {/* ------------------------------------------------------------- */}
+      {/* 1. CABEÇALHO                                                  */}
+      {/* ------------------------------------------------------------- */}
+      <header
+        id="cabecalho-quadro"
+        className="border-b border-slate-200 pb-5 dark:border-slate-800"
+      >
+        <h1 className="text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
           CONGREGAÇÃO: VILA CISPER
         </h1>
-        <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400 capitalize">
-          {dataAtualTexto}
+        <p className="mt-1.5 text-base font-semibold capitalize text-slate-600 dark:text-slate-400 sm:text-lg">
+          {dataAtualFormatada}
         </p>
-      </div>
+      </header>
 
-      {/* Banner Fotográfico */}
-      <div className="overflow-hidden rounded-2xl shadow-xs border border-slate-200/60 dark:border-slate-800">
+      {/* ------------------------------------------------------------- */}
+      {/* BANNER VISUAL DISCRETO E MODERNO                              */}
+      {/* ------------------------------------------------------------- */}
+      <div
+        id="banner-horizontal-inicio"
+        className="overflow-hidden rounded-xl border border-slate-200 shadow-2xs dark:border-slate-800"
+      >
         <img
-          src={bannerImg}
-          alt="Congregação Vila Cisper"
-          className="h-44 sm:h-52 w-full object-cover"
+          src={bannerReuniaoOficial}
+          alt="Reunião congregacional e estudo bíblico"
+          className="h-28 sm:h-36 w-full object-cover object-center"
+          referrerPolicy="no-referrer"
+          loading="eager"
         />
       </div>
 
-      {/* Seção: PRÓXIMA REUNIÃO */}
-      <div className="space-y-2">
-        <h2 className="text-xs sm:text-sm font-black tracking-wider text-slate-700 dark:text-slate-300 uppercase">
+      {/* ------------------------------------------------------------- */}
+      {/* 2. PRÓXIMA REUNIÃO                                            */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-proxima-reuniao" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
           PRÓXIMA REUNIÃO
         </h2>
-        <div
-          onClick={() => onNavigate('vida-e-ministerio')}
-          className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-2 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
-        >
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 block">
-            {reuniaoInfo.tipo}
-          </span>
-          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-            {reuniaoInfo.dataTitulo}
-          </h3>
-          <div className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-slate-200">
-            <Clock className="h-4 w-4 text-slate-500" />
-            <span>{reuniaoInfo.horario}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* Seção: PRÓXIMAS DESIGNAÇÕES */}
-      <div className="space-y-2">
-        <h2 className="text-xs sm:text-sm font-black tracking-wider text-slate-700 dark:text-slate-300 uppercase">
+        {proximaReuniaoInfo ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:p-6 space-y-2.5">
+            <div className="text-sm font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              {proximaReuniaoInfo.tipoReuniao}
+            </div>
+
+            <div className="text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+              {proximaReuniaoInfo.dataCompleta}
+            </div>
+
+            {proximaReuniaoInfo.horario && (
+              <div className="flex items-center gap-2 pt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100 sm:text-xl">
+                <Clock className="h-5 w-5 text-slate-500 shrink-0" />
+                <span>{proximaReuniaoInfo.horario}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-5 text-base font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+            Nenhuma reunião cadastrada no momento.
+          </div>
+        )}
+      </section>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 3. PRÓXIMAS DESIGNAÇÕES                                       */}
+      {/* Exibição resumida e objetiva: Indicador, Microfone,           */}
+      {/* Áudio e vídeo, Leitor                                         */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-proximas-designacoes" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
           PRÓXIMAS DESIGNAÇÕES
         </h2>
-        <div
-          onClick={() => onNavigate('designacoes')}
-          className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-2.5 text-xs sm:text-sm text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
-        >
-          <div>
-            <strong className="font-bold text-slate-900 dark:text-white">Indicador: </strong>
-            <span>{proximaDesignacao.indicador}</span>
-          </div>
-          <div>
-            <strong className="font-bold text-slate-900 dark:text-white">Microfone: </strong>
-            <span>{proximaDesignacao.microfone}</span>
-          </div>
-          <div>
-            <strong className="font-bold text-slate-900 dark:text-white">Áudio e vídeo: </strong>
-            <span>{proximaDesignacao.audioVideo}</span>
-          </div>
-          <div>
-            <strong className="font-bold text-slate-900 dark:text-white">Leitor: </strong>
-            <span>{proximaDesignacao.leitor}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* Seção: ACESSOS PRINCIPAIS */}
-      <div className="space-y-3 pt-2">
-        <h2 className="text-xs sm:text-sm font-black tracking-wider text-slate-700 dark:text-slate-300 uppercase">
-          ACESSOS PRINCIPAIS
+        {designacoesResumo ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:p-6 space-y-3">
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Indicador:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.indicador}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Microfone:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.microfone}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Áudio e vídeo:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.audioVideo}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2 text-base sm:text-lg">
+              <span className="font-bold text-slate-900 dark:text-white">Leitor:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {designacoesResumo.leitor}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-5 text-base font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+            Nenhuma designação cadastrada no momento.
+          </div>
+        )}
+      </section>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 4. ABAS DE ACESSO PRINCIPAIS (MODO LISTA FIXA)                */}
+      {/* ------------------------------------------------------------- */}
+      <section id="secao-acessos-principais" className="space-y-3">
+        <h2 className="text-base font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          Acessos Principais
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {acessosPrincipais.map((item) => {
-            const Icon = item.icon;
+
+        {/* Modo Lista com abas fixas e largura compacta */}
+        <div
+          id="lista-acessos-principais"
+          className="flex flex-col gap-2"
+        >
+          {botoesAcessoPrincipal.map((botao) => {
+            const Icon = botao.icon;
             return (
               <button
-                key={item.id}
+                key={botao.id}
+                id={botao.id}
                 type="button"
-                onClick={() => onNavigate(item.id)}
-                className="flex items-center gap-3.5 rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-xs transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+                onClick={() => onNavigate(botao.screen)}
+                className="group flex w-full items-center justify-between rounded-xl border border-slate-200/90 bg-white px-3.5 py-2.5 text-left shadow-2xs transition-all hover:border-amber-400 hover:bg-amber-50/40 hover:shadow-xs active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-amber-500 dark:hover:bg-amber-950/25"
               >
-                <div className={`rounded-xl p-2.5 text-white ${item.color}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="overflow-hidden flex-1">
-                  <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                    {item.label}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 transition-colors group-hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-400 dark:group-hover:bg-amber-900/60">
+                    <Icon className="h-4 w-4" />
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    {item.desc}
-                  </div>
+                  <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-700 dark:group-hover:text-amber-400 truncate">
+                    {botao.label}
+                  </span>
                 </div>
-                <ArrowRight className="h-4 w-4 text-slate-400 shrink-0" />
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 group-hover:text-amber-600 dark:text-slate-500 dark:group-hover:text-amber-400">
+                  <span className="hidden sm:inline">Acessar</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                </div>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
+
+      {/* ------------------------------------------------------------- */}
+      {/* POP-UP TEMPORÁRIO DE AVISOS (EXIBE 1 POR VEZ ATÉ "ENTENDI")   */}
+      {/* ------------------------------------------------------------- */}
+      {avisoAtualPopUp && (
+        <div
+          id="modal-aviso-popup"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+        >
+          <div className="relative w-full max-w-lg rounded-2xl border-2 border-amber-400 bg-white p-6 shadow-2xl dark:border-amber-600 dark:bg-slate-900 sm:p-7">
+            {/* Cabeçalho do Pop-up com indicador de contagem se houver múltiplos */}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <span className="text-xs font-black uppercase tracking-wider">
+                  Comunicado da Congregação
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {avisosNaoVisualizados.length > 1 && (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    1 de {avisosNaoVisualizados.length}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  id="btn-fechar-aviso-popup"
+                  onClick={() => handleEntendiAviso(avisoAtualPopUp.id)}
+                  className="rounded-lg p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  aria-label="Fechar comunicado"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Título do Aviso */}
+            <h3 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
+              {avisoAtualPopUp.titulo}
+            </h3>
+
+            {/* Categoria, data e autor */}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                {avisoAtualPopUp.categoria}
+              </span>
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                <span>{avisoAtualPopUp.dataPublicacao}</span>
+              </div>
+              {avisoAtualPopUp.autor && (
+                <>
+                  <span>&bull;</span>
+                  <span>{avisoAtualPopUp.autor}</span>
+                </>
+              )}
+            </div>
+
+            {/* Conteúdo do Comunicado */}
+            <div className="mt-4 max-h-[60vh] overflow-y-auto rounded-xl bg-amber-50/60 p-4 border border-amber-200/60 dark:bg-amber-950/20 dark:border-amber-800/40">
+              <p className="whitespace-pre-line text-base leading-relaxed text-slate-800 dark:text-slate-200">
+                {avisoAtualPopUp.conteudo}
+              </p>
+            </div>
+
+            {/* Botão ENTENDI (Registra visualização e fecha / avança para o próximo) */}
+            <div className="mt-6 flex justify-end">
+              <button
+                id="btn-entendi-aviso-popup"
+                type="button"
+                onClick={() => handleEntendiAviso(avisoAtualPopUp.id)}
+                className="w-full sm:w-auto min-h-[46px] rounded-xl bg-amber-600 px-8 py-3 text-base font-black text-white shadow-md hover:bg-amber-700 active:scale-[0.99] transition-all"
+              >
+                ENTENDI
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
