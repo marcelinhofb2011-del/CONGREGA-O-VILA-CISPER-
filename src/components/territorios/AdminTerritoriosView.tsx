@@ -1109,7 +1109,7 @@ export const AdminTerritoriosView: React.FC<AdminTerritoriosViewProps> = ({
                           {h.publicador}
                         </td>
                         <td className="px-3 py-3">
-                          {h.territorio_numero > 0 ? (
+                          {Number(h.territorio_numero) > 0 ? (
                             <span className="font-semibold text-slate-800 dark:text-slate-200">
                               Nº {h.territorio_numero} {h.territorio_localidade ? `(${h.territorio_localidade})` : ''}
                             </span>

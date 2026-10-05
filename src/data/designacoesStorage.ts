@@ -245,3 +245,61 @@ export function saveBulkEscalaDesignacoes(
   }
 }
 
+export async function saveStoredEscalaItem(
+  item: EscalaDesignacaoItem
+): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string }> {
+  try {
+    const current = getStoredEscalaDesignacoes();
+    const index = current.findIndex((i) => i.id === item.id);
+    let updated: EscalaDesignacaoItem[];
+    if (index >= 0) {
+      updated = [...current];
+      updated[index] = item;
+    } else {
+      updated = [item, ...current];
+    }
+    localStorage.setItem(STORAGE_KEY_ESCALA_DESIGNACOES, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('designacoes-updated', { detail: updated }));
+    window.dispatchEvent(new CustomEvent('designacoes-firebase-updated', { detail: updated }));
+    try {
+      await firebaseSync.saveBatchCollection(
+        'escala_designacoes_mensal',
+        updated,
+        STORAGE_KEY_ESCALA_DESIGNACOES,
+        'designacoes-firebase-updated'
+      );
+    } catch (e) {
+      console.warn('Erro ao salvar escala no Firebase:', e);
+    }
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteStoredEscalaItem(
+  id: string
+): Promise<{ success: boolean; data?: EscalaDesignacaoItem[]; error?: string }> {
+  try {
+    const current = getStoredEscalaDesignacoes();
+    const updated = current.filter((item) => item.id !== id);
+    localStorage.setItem(STORAGE_KEY_ESCALA_DESIGNACOES, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('designacoes-updated', { detail: updated }));
+    window.dispatchEvent(new CustomEvent('designacoes-firebase-updated', { detail: updated }));
+    try {
+      await firebaseSync.saveBatchCollection(
+        'escala_designacoes_mensal',
+        updated,
+        STORAGE_KEY_ESCALA_DESIGNACOES,
+        'designacoes-firebase-updated'
+      );
+    } catch (e) {
+      console.warn('Erro ao excluir item da escala no Firebase:', e);
+    }
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+

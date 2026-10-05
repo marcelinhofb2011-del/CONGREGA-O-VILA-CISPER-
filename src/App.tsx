@@ -21,6 +21,7 @@ import { ConfiguracoesView } from './views/ConfiguracoesView';
 import { PlaceholderView } from './views/PlaceholderView';
 import { GlobalAvisoPopUp } from './components/GlobalAvisoPopUp';
 import { usePWA } from './hooks/usePWA';
+import { isAdminAuthenticated } from './data/territoriosStorage';
 
 const VALID_SCREENS: ScreenId[] = [
   'inicio',
@@ -72,8 +73,8 @@ export default function App() {
   // Persistent Text Size
   const [textSize, setTextSize] = useState<TextSize>(() => {
     const saved = localStorage.getItem('vila_cisper_text_size');
-    if (saved === 'sm' || saved === 'md' || saved === 'lg') return saved;
-    return 'md';
+    if (saved === 'pequeno' || saved === 'medio' || saved === 'grande') return saved;
+    return 'medio';
   });
 
   // Apply theme to DOM
@@ -148,7 +149,7 @@ export default function App() {
       case 'inicio':
         return <InicioView onNavigate={(screen) => navigateToScreen(screen)} />;
       case 'programacao':
-        return <ProgramacaoGeralView />;
+        return <ProgramacaoGeralView onNavigate={(screen) => navigateToScreen(screen)} />;
       case 'designacoes':
         return <DesignacoesView />;
       case 'vida-e-ministerio':
@@ -160,7 +161,7 @@ export default function App() {
       case 'limpeza':
         return <LimpezaView />;
       case 'territorios':
-        return <TerritoriosView />;
+        return <TerritoriosView isAdmin={isAdminAuthenticated()} />;
       case 'avisos':
         return <AvisosView />;
       case 'administracao':
@@ -172,14 +173,7 @@ export default function App() {
       case 'assistencia':
         return <AssistenciaView />;
       case 'configuracoes':
-        return (
-          <ConfiguracoesView
-            textSize={textSize}
-            onChangeTextSize={setTextSize}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-          />
-        );
+        return <ConfiguracoesView theme={theme} onToggleTheme={toggleTheme} />;
       default:
         return <PlaceholderView screenId={currentScreen} />;
     }
@@ -189,21 +183,22 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans antialiased">
       {/* Header Fixo do Quadro Digital */}
       <Header
-        currentScreen={currentScreen}
-        onOpenMobileMenu={() => setIsDrawerOpen(true)}
-        isDark={theme === 'dark'}
+        onOpenMenu={() => setIsDrawerOpen(true)}
+        isAdmin={isAdminAuthenticated()}
+        onOpenAdminLogin={() => navigateToScreen('administracao')}
+        onAdminLogout={() => {}}
+        theme={theme}
         onToggleTheme={toggleTheme}
-        isOnline={isOnline}
-        textSize={textSize}
-        onChangeTextSize={setTextSize}
-        onNavigateToAdmin={() => navigateToScreen('administracao')}
+        fontSize="M"
+        onToggleFontSize={() => {}}
       />
 
       {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           currentScreen={currentScreen}
-          onSelectScreen={(screen) => navigateToScreen(screen)}
+          onNavigate={(screen) => navigateToScreen(screen)}
+          isAdmin={isAdminAuthenticated()}
         />
 
         {/* Main Content Area - Mobile First, pb-20 for standard bottom navigation clearance */}
@@ -219,9 +214,8 @@ export default function App() {
       {/* Navegação Inferior para Celular */}
       <BottomNav
         currentScreen={currentScreen}
-        onSelectScreen={(screen) => navigateToScreen(screen)}
-        onOpenDrawer={() => setIsDrawerOpen((prev) => !prev)}
-        isDrawerOpen={isDrawerOpen}
+        onNavigate={(screen) => navigateToScreen(screen)}
+        onOpenMore={() => setIsDrawerOpen((prev) => !prev)}
       />
 
       {/* Gaveta de Navegação Mobile Completa */}
@@ -229,7 +223,8 @@ export default function App() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         currentScreen={currentScreen}
-        onSelectScreen={(screen) => navigateToScreen(screen)}
+        onNavigate={(screen) => navigateToScreen(screen)}
+        isAdmin={isAdminAuthenticated()}
       />
 
       {/* Pop-up de Aviso Global em Tempo Real */}

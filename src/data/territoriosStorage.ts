@@ -24,6 +24,10 @@ export interface Territorio {
   motivo_estorno?: string;
   data_ultimo_retorno_sort?: string;
   created_at?: string;
+  data_solicitacao?: string;
+  hora_solicitacao?: string;
+  updated_at?: string;
+  [key: string]: any;
 }
 
 export interface SolicitacaoTerritorio {
@@ -33,10 +37,11 @@ export interface SolicitacaoTerritorio {
   hora_solicitacao: string;
   status: 'Pendente' | 'Designado' | 'Cancelada' | string;
   territorio_id?: string;
-  territorio_numero?: number;
+  territorio_numero?: number | string;
   data_designacao?: string;
   responsavel?: string;
   created_at?: string;
+  [key: string]: any;
 }
 
 export interface TransferenciaTerritorio {
@@ -44,28 +49,31 @@ export interface TransferenciaTerritorio {
   data_solicitacao: string;
   hora_solicitacao: string;
   territorio_id: string;
-  territorio_numero: number;
+  territorio_numero: number | string;
   territorio_localidade?: string;
   publicador_atual: string;
   novo_publicador: string;
   status: 'Aguardando aprovação' | 'Aprovada' | 'Recusada' | string;
   data_decisao?: string;
   responsavel_decisao?: string;
+  responsavel?: string;
   created_at?: string;
+  [key: string]: any;
 }
 
 export interface HistoricoTerritorio {
   id: string;
-  data: string;
-  acao: string;
-  publicador: string;
+  data?: string;
+  acao?: string;
+  publicador?: string;
   territorio_id?: string;
-  territorio_numero: number;
+  territorio_numero?: number | string;
   territorio_localidade?: string;
-  responsavel: string;
-  observacao?: string;
+  responsavel?: string;
   status?: string;
+  observacao?: string;
   created_at?: string;
+  [key: string]: any;
 }
 
 export const STORAGE_KEY_ADMIN_AUTH = 'vila_cisper_admin_auth';
@@ -95,9 +103,29 @@ export function setAdminAuthenticated(auth: boolean): void {
   }
 }
 
+export const STORAGE_KEY_ADMIN_SENHA = 'vila_cisper_admin_senha_custom';
+
+export function getAdminPassword(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY_ADMIN_SENHA) || '67744';
+  } catch {
+    return '67744';
+  }
+}
+
 export function verifyAdminPassword(password: string): boolean {
-  const senhasValidas = ['67744', 'admin', 'vilacisper'];
+  const senhasValidas = ['67744', 'admin', 'vilacisper', getAdminPassword()];
   return senhasValidas.includes(password.trim());
+}
+
+export function updateAdminPassword(senhaAtual: string, novaSenha: string): boolean {
+  if (!verifyAdminPassword(senhaAtual)) return false;
+  try {
+    localStorage.setItem(STORAGE_KEY_ADMIN_SENHA, novaSenha.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getActivePublicador(): string {
@@ -739,3 +767,23 @@ export async function solicitarCompartilhamento(
     observacao: `Aguardando aprovação do responsável`,
   });
 }
+
+export function formatarDataHoje(): string {
+  const agora = new Date();
+  const dia = String(agora.getDate()).padStart(2, '0');
+  const mes = String(agora.getMonth() + 1).padStart(2, '0');
+  const ano = agora.getFullYear();
+  return `${dia}/${mes}/${ano}`;
+}
+
+export function formatarHoraHoje(): string {
+  const agora = new Date();
+  const horas = String(agora.getHours()).padStart(2, '0');
+  const minutos = String(agora.getMinutes()).padStart(2, '0');
+  return `${horas}:${minutos}`;
+}
+
+export function formatarDataHoraHoje(): string {
+  return `${formatarDataHoje()} às ${formatarHoraHoje()}`;
+}
+

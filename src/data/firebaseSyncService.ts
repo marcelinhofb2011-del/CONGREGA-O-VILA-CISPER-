@@ -405,7 +405,7 @@ class FirebaseSyncManager {
           lista.push(docSnap.data() as Territorio);
         });
 
-        lista.sort((a, b) => a.numero - b.numero);
+        lista.sort((a, b) => Number(a.numero) - Number(b.numero));
         this.territoriosCache = lista;
         localStorage.setItem(STORAGE_KEY_TERRITORIOS, JSON.stringify(lista));
         this.territoriosListeners.forEach((cb) => {
