@@ -82,8 +82,12 @@ export default function App() {
     const root = document.documentElement;
     if (theme === 'dark') {
       root.classList.add('dark');
+      root.setAttribute('data-theme', 'dark');
+      document.body.classList.add('dark');
     } else {
       root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+      document.body.classList.remove('dark');
     }
     localStorage.setItem('vila_cisper_theme', theme);
   }, [theme]);
@@ -91,6 +95,8 @@ export default function App() {
   // Apply text size to DOM
   useEffect(() => {
     document.documentElement.setAttribute('data-text-size', textSize);
+    const sizePx = textSize === 'pequeno' ? '14px' : textSize === 'grande' ? '20px' : '16px';
+    document.documentElement.style.fontSize = sizePx;
     localStorage.setItem('vila_cisper_text_size', textSize);
   }, [textSize]);
 
@@ -144,6 +150,15 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  const toggleFontSize = () => {
+    setTextSize((prev) => {
+      // De médio, vai para grande (melhorando imediatamente para irmãos idosos), depois pequeno, depois médio
+      if (prev === 'medio') return 'grande';
+      if (prev === 'grande') return 'pequeno';
+      return 'medio';
+    });
+  };
+
   const renderActiveScreen = () => {
     switch (currentScreen) {
       case 'inicio':
@@ -151,15 +166,15 @@ export default function App() {
       case 'programacao':
         return <ProgramacaoGeralView onNavigate={(screen) => navigateToScreen(screen)} />;
       case 'designacoes':
-        return <DesignacoesView />;
+        return <DesignacoesView isAdmin={isAdminAuthenticated()} />;
       case 'vida-e-ministerio':
-        return <VidaEMinisterioView />;
+        return <VidaEMinisterioView isAdmin={isAdminAuthenticated()} />;
       case 'discurso-publico':
         return <DiscursoPublicoView />;
       case 'servico-de-campo':
         return <ServicoDeCampoView />;
       case 'limpeza':
-        return <LimpezaView />;
+        return <LimpezaView isAdmin={isAdminAuthenticated()} />;
       case 'territorios':
         return <TerritoriosView isAdmin={isAdminAuthenticated()} />;
       case 'avisos':
@@ -173,7 +188,14 @@ export default function App() {
       case 'assistencia':
         return <AssistenciaView />;
       case 'configuracoes':
-        return <ConfiguracoesView theme={theme} onToggleTheme={toggleTheme} />;
+        return (
+          <ConfiguracoesView
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            textSize={textSize}
+            onToggleFontSize={toggleFontSize}
+          />
+        );
       default:
         return <PlaceholderView screenId={currentScreen} />;
     }
@@ -189,8 +211,8 @@ export default function App() {
         onAdminLogout={() => {}}
         theme={theme}
         onToggleTheme={toggleTheme}
-        fontSize="M"
-        onToggleFontSize={() => {}}
+        fontSize={textSize === 'pequeno' ? 'P' : textSize === 'grande' ? 'G' : 'M'}
+        onToggleFontSize={toggleFontSize}
       />
 
       {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
@@ -201,11 +223,11 @@ export default function App() {
           isAdmin={isAdminAuthenticated()}
         />
 
-        {/* Main Content Area - Mobile First, pb-20 for standard bottom navigation clearance */}
+        {/* Main Content Area - Expansivo para aproveitar toda a proporção da tela */}
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 pb-20 sm:pb-24 lg:pb-12 max-w-5xl mx-auto w-full"
+          className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 pb-20 sm:pb-24 lg:pb-12 max-w-7xl mx-auto w-full"
         >
           {renderActiveScreen()}
         </main>

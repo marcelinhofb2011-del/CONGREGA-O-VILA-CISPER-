@@ -73,19 +73,11 @@ export const GlobalAvisoPopUp: React.FC<GlobalAvisoPopUpProps> = ({ currentScree
     };
   }, []);
 
-  // Se estiver na tela inicial, InicioView já gerencia o pop-up nativamente
-  // Isso evita qualquer duplicidade na tela inicial
-  if (currentScreen === 'inicio') {
-    return null;
-  }
-
-  // Não exibe o pop-up se o usuário for o Responsável autenticado
-  if (isAdminAuthenticated()) {
-    return null;
-  }
-
   // Fila de avisos válidos que ainda não foram visualizados
+  // Hook deve ser chamado incondicionalmente no topo (Rules of Hooks)
   const avisoAtual = useMemo(() => {
+    if (currentScreen === 'inicio') return null;
+    if (isAdminAuthenticated()) return null;
     if (!avisos || avisos.length === 0) return null;
 
     const ativos = avisos.filter((a) => a.ativo !== false && !isTestOrDemoAviso(a));
@@ -118,9 +110,10 @@ export const GlobalAvisoPopUp: React.FC<GlobalAvisoPopUpProps> = ({ currentScree
     });
 
     return ordenados[0] || null;
-  }, [avisos, visualizadosIds]);
+  }, [avisos, visualizadosIds, currentScreen]);
 
-  if (!avisoAtual) {
+  // Se estiver na tela inicial (gerenciado pelo InicioView), se for admin ou se não houver aviso pendente
+  if (currentScreen === 'inicio' || isAdminAuthenticated() || !avisoAtual) {
     return null;
   }
 

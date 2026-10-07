@@ -181,32 +181,23 @@ export const AvisosView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6 pb-16 pt-1">
       {/* Cabeçalho do Quadro de Avisos */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-8">
+      <header className="border-b border-slate-200 pb-4 dark:border-slate-800">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                <Bell className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-                  AVISOS DA CONGREGAÇÃO
-                </h1>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Quadro de anúncios, lembretes e comunicados oficiais
-                </p>
-              </div>
+            <div className="flex items-center gap-2.5">
+              <Bell className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-slate-900 dark:text-white">
+                AVISOS DA CONGREGAÇÃO
+              </h1>
             </div>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Quadro de anúncios, lembretes e comunicados oficiais
+            </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <div className="hidden lg:flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <span>Quadro oficial de comunicados</span>
-            </div>
-
+          <div className="flex items-center gap-2">
             {/* Botão + (Adicionar Novo Aviso) */}
             <button
               type="button"
@@ -220,25 +211,25 @@ export const AvisosView: React.FC = () => {
                   setShowAuthModal(true);
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-800 active:scale-[0.99] transition-all"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-800 active:scale-[0.98] transition cursor-pointer"
               title="Adicionar Novo Aviso"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               <span>{isFormAvisoAberto ? 'Fechar' : 'Novo Aviso'}</span>
             </button>
 
             {/* Botão de Modo Responsável */}
             {isAdmin ? (
               <div className="flex items-center gap-2">
-                <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-emerald-100 px-2.5 py-1.5 text-xs font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Responsável
                 </span>
                 <button
                   type="button"
                   id="btn-sair-responsavel-avisos"
                   onClick={handleLogout}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors cursor-pointer"
                   title="Sair do modo responsável"
                 >
                   <Unlock className="h-3.5 w-3.5 text-emerald-600" />
@@ -254,7 +245,7 @@ export const AvisosView: React.FC = () => {
                   setAuthError('');
                   setShowAuthModal(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors cursor-pointer"
               >
                 <Lock className="h-3.5 w-3.5" />
                 <span>Responsável</span>
@@ -265,8 +256,8 @@ export const AvisosView: React.FC = () => {
 
         {/* Filtro por Categoria */}
         {categorias.length > 2 && (
-          <div className="mt-6 flex flex-wrap gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <span className="self-center text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">
+          <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <span className="self-center text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">
               Filtrar:
             </span>
             {categorias.map((cat) => (
@@ -274,9 +265,9 @@ export const AvisosView: React.FC = () => {
                 key={cat}
                 type="button"
                 onClick={() => setFiltroCategoria(cat)}
-                className={`rounded-xl px-4 py-2 text-sm font-bold transition-all ${
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition cursor-pointer ${
                   filtroCategoria === cat
-                    ? 'bg-slate-900 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900'
+                    ? 'bg-slate-900 text-white shadow-xs dark:bg-slate-100 dark:text-slate-900'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                 }`}
               >
@@ -285,7 +276,7 @@ export const AvisosView: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
+      </header>
 
       {/* ------------------------------------------------------------- */}
       {/* CAMPO SIMPLES PARA O RESPONSÁVEL ESCREVER O AVISO E PUBLICAR  */}
@@ -410,17 +401,17 @@ export const AvisosView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5">
+        <div className="space-y-4">
           {avisosFiltrados.map((aviso) => {
             const isImportante = aviso.categoria === 'Importante';
             return (
               <article
                 key={aviso.id}
                 id={`aviso-card-${aviso.id}`}
-                className={`rounded-2xl border p-6 transition-shadow shadow-xs hover:shadow-md ${
+                className={`rounded-xl p-5 sm:p-6 transition-all ${
                   isImportante
-                    ? 'border-amber-300 bg-amber-50/50 dark:border-amber-800/80 dark:bg-amber-950/20'
-                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                    ? 'bg-amber-50/70 border-l-4 border-l-amber-500 dark:bg-amber-950/30 dark:border-l-amber-400'
+                    : 'bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800'
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">

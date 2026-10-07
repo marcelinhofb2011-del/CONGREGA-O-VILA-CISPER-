@@ -12,15 +12,15 @@ export const ProgramacaoGeralView: React.FC<ProgramacaoGeralViewProps> = ({ onNa
   const horarioSaida = horarios?.saidaDeCampo?.horario || getHorarioSaidaDeCampo() || '08:00';
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      <div>
+    <div className="w-full space-y-6 pb-16 pt-1">
+      <div className="border-b border-slate-200 pb-4 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
             Programação Geral
           </h1>
         </div>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Visão unificada das atividades e reuniões da Congregação Vila Cisper
         </p>
       </div>

@@ -238,6 +238,15 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       }
     }
 
+    // Tenta formato ISO YYYY-MM-DD
+    const matchIso = texto.match(/202\d[\/\-\.](0?[1-9]|1[0-2])[\/\-\.]\d{1,2}/);
+    if (matchIso) {
+      const mesNum = parseInt(matchIso[1], 10);
+      if (mesNum >= 1 && mesNum <= 12) {
+        return MESES_NOMES[mesNum - 1];
+      }
+    }
+
     // Tenta formato DD/MM/YYYY ou DD/MM
     const matchData = texto.match(/(\d{1,2})[\/\-\.](\d{1,2})([\/\-\.](\d{2,4}))?/);
     if (matchData) {
@@ -294,9 +303,16 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
         }),
       });
 
-      const data = await resp.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Não foi possível interpretar a programação do arquivo PDF.');
+      const responseOk = resp.ok;
+      let data: any = {};
+      try {
+        data = await resp.json();
+      } catch {
+        throw new Error('Falha ao processar a resposta do servidor. O arquivo pode ser muito grande ou estar corrompido.');
+      }
+
+      if (!responseOk || !data.success) {
+        throw new Error(data?.error || 'Não foi possível interpretar a programação do arquivo PDF.');
       }
 
       const listaMeses: string[] =
@@ -406,7 +422,29 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
 
     const mesesAlvoNorm = new Set<string>(mesesSelecionados.map(normalizar));
 
-    // Se o arquivo for PDF com itens extraídos por IA
+    // Helper resiliente para verificar pertinência ao mês sem descartar itens por diferenças de rótulo
+    const verificarPertenceAoMes = (mesTexto: string, itemData?: string): boolean => {
+      if (mesesSelecionados.length === 0 || mesesAlvoNorm.size === 0) return true;
+      const norm = normalizar(mesTexto || '');
+      if (!norm || norm === 'mes' || norm === 'mes detectado') return true;
+      if (mesesAlvoNorm.has(norm)) return true;
+      for (const m of mesesAlvoNorm) {
+        if (norm.includes(m) || m.includes(norm)) return true;
+      }
+      if (itemData) {
+        const mData = detectarMesTexto(itemData);
+        if (mData) {
+          const mDataNorm = normalizar(mData);
+          if (mesesAlvoNorm.has(mDataNorm)) return true;
+          for (const m of mesesAlvoNorm) {
+            if (mDataNorm.includes(m) || m.includes(mDataNorm)) return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Se o arquivo for PDF com itens extraídos por IA ou parser determinístico
     if (isPdf && itensPdfExtraidos.length > 0) {
       const registros: RegistroProcessado[] = [];
       const validacoes: ValidacaoItem[] = [];
@@ -419,13 +457,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
             detectarMesTexto(item.periodo || item.dataReuniao || item.dataReferencia || '') ||
             mesesSelecionados[0] ||
             'Mês';
-          const mesNorm = normalizar(mesDetectado);
 
-          const pertenceAoMes =
-            mesesAlvoNorm.has(mesNorm) ||
-            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
-
-          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+          if (!verificarPertenceAoMes(mesDetectado, item.dataReferencia || item.dataReuniao || item.periodo)) {
             return;
           }
 
@@ -480,13 +513,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
       } else if (modulo === 'designacoes') {
         itensPdfExtraidos.forEach((item: EscalaDesignacaoItem, idx: number) => {
           const mesDetectado = item.mes || mesesSelecionados[0] || 'Mês';
-          const mesNorm = normalizar(item.mesChave || mesDetectado);
 
-          const pertenceAoMes =
-            mesesAlvoNorm.has(mesNorm) ||
-            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
-
-          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+          if (!verificarPertenceAoMes(item.mesChave || mesDetectado, item.dia)) {
             return;
           }
 
@@ -521,13 +549,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
             detectarMesTexto(item.data || '') ||
             mesesSelecionados[0] ||
             'Mês';
-          const mesNorm = normalizar(mesDetectado);
 
-          const pertenceAoMes =
-            mesesAlvoNorm.has(mesNorm) ||
-            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
-
-          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+          if (!verificarPertenceAoMes(mesDetectado, item.data)) {
             return;
           }
 
@@ -570,13 +593,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
             detectarMesTexto(item.data || '') ||
             mesesSelecionados[0] ||
             'Mês';
-          const mesNorm = normalizar(mesDetectado);
 
-          const pertenceAoMes =
-            mesesAlvoNorm.has(mesNorm) ||
-            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
-
-          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+          if (!verificarPertenceAoMes(mesDetectado, item.data)) {
             return;
           }
 
@@ -631,13 +649,8 @@ export const ImportarPlanilhaModal: React.FC<ImportarPlanilhaModalProps> = ({
             detectarMesTexto(item.dias || '') ||
             mesesSelecionados[0] ||
             'Mês';
-          const mesNorm = normalizar(item.mesChave || mesDetectado);
 
-          const pertenceAoMes =
-            mesesAlvoNorm.has(mesNorm) ||
-            Array.from(mesesAlvoNorm).some((m: string) => mesNorm.includes(m) || m.includes(mesNorm));
-
-          if (!pertenceAoMes && mesesSelecionados.length > 0) {
+          if (!verificarPertenceAoMes(item.mesChave || mesDetectado, item.dias)) {
             return;
           }
 

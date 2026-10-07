@@ -128,7 +128,7 @@ export const TerritoriosView: React.FC<TerritoriosViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="w-full space-y-6 pb-16 pt-1">
       {/* Toast de Notificação */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-2xl dark:bg-white dark:text-slate-900 animate-in fade-in slide-in-from-bottom-2">
@@ -138,7 +138,7 @@ export const TerritoriosView: React.FC<TerritoriosViewProps> = ({
       )}
 
       {/* Cabeçalho */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-800">
         <div>
           <div className="flex items-center gap-2">
             <Map className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />

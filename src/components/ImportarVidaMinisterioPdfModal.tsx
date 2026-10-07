@@ -102,8 +102,11 @@ export const ImportarVidaMinisterioPdfModal: React.FC<ImportarVidaMinisterioPdfM
         },
         body: JSON.stringify({
           pdfBase64: pdfBase64 || undefined,
+          fileBase64: pdfBase64 || undefined,
           textContent: usarTextoManual ? textoManual.trim() : undefined,
           filename: nomeArquivo || 'programacao.pdf',
+          fileName: nomeArquivo || 'programacao.pdf',
+          modulo: 'vida-ministerio',
         }),
       });
 

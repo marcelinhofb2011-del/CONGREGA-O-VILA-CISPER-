@@ -43,16 +43,19 @@ function verificarDesignacaoNome(nomeBuscado: string, campoTexto?: string): bool
   return regex.test(campoTexto);
 }
 
-export const DesignacoesView: React.FC = () => {
+interface DesignacoesViewProps {
+  isAdmin?: boolean;
+}
+
+export const DesignacoesView: React.FC<DesignacoesViewProps> = ({ isAdmin: propIsAdmin }) => {
   const [escalas, setEscalas] = useState<EscalaDesignacaoItem[]>([]);
   const [escalaIdAtiva, setEscalaIdAtiva] = useState<string>('');
 
   // Autenticação do Responsável
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [passwordInput, setPasswordInput] = useState<string>('');
-  const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string>('');
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    if (propIsAdmin !== undefined) return propIsAdmin;
+    return isAdminAuthenticated();
+  });
 
   // Modais
   const [isImportPlanilhaOpen, setIsImportPlanilhaOpen] = useState<boolean>(false);
@@ -95,12 +98,18 @@ export const DesignacoesView: React.FC = () => {
 
   const carregarEscalas = () => {
     setEscalas(getStoredEscalaDesignacoes());
-    setIsAdmin(isAdminAuthenticated());
+    if (propIsAdmin !== undefined) {
+      setIsAdmin(propIsAdmin);
+    } else {
+      setIsAdmin(isAdminAuthenticated());
+    }
   };
 
   useEffect(() => {
     carregarEscalas();
+  }, [propIsAdmin]);
 
+  useEffect(() => {
     const handleFirebaseUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<EscalaDesignacaoItem[]>;
       if (customEvent.detail && Array.isArray(customEvent.detail)) {
@@ -274,29 +283,6 @@ export const DesignacoesView: React.FC = () => {
     }
   };
 
-  // Handlers de Autenticação
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (verifyAdminPassword(passwordInput)) {
-      setAdminAuthenticated(true);
-      setIsAdmin(true);
-      setShowAuthModal(false);
-      setPasswordInput('');
-      setAuthError('');
-      setFeedbackMsg({ tipo: 'sucesso', texto: 'Acesso de responsável concedido.' });
-      setTimeout(() => setFeedbackMsg(null), 3000);
-    } else {
-      setAuthError('Senha incorreta. Tente novamente.');
-    }
-  };
-
-  const handleLogout = () => {
-    setAdminAuthenticated(false);
-    setIsAdmin(false);
-    setFeedbackMsg({ tipo: 'sucesso', texto: 'Modo responsável desativado.' });
-    setTimeout(() => setFeedbackMsg(null), 2500);
-  };
-
   // Handlers de Cadastro / Edição
   const handleOpenCreate = () => {
     setItemParaEditar(null);
@@ -380,11 +366,11 @@ export const DesignacoesView: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-8 pb-16 pt-2">
+    <div className="mx-auto w-full max-w-6xl space-y-6 pb-16 pt-2">
       {/* ------------------------------------------------------------- */}
       {/* CABEÇALHO DO MÓDULO                                           */}
       {/* ------------------------------------------------------------- */}
-      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+      <header className="border-b border-slate-200 pb-4 dark:border-slate-800">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <span className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
@@ -395,62 +381,36 @@ export const DesignacoesView: React.FC = () => {
             </h1>
           </div>
 
-          {/* Botões do Responsável */}
-          <div className="flex items-center gap-2">
-            {isAdmin ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  id="btn-importar-pdf-designacoes"
-                  onClick={() => setIsImportPlanilhaOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-purple-700 px-3.5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xs hover:bg-purple-800 transition"
-                  title="Importar programação oficial via PDF"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Importar PDF</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-cadastrar-designacao"
-                  onClick={handleOpenCreate}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-extrabold text-white shadow-xs hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Cadastrar Programação</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-sair-responsavel-designacoes"
-                  onClick={handleLogout}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors"
-                  title="Sair do modo responsável"
-                >
-                  <Unlock className="h-3.5 w-3.5 text-green-600" />
-                  <span>Sair</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                id="btn-login-responsavel-designacoes"
-                onClick={() => {
-                  setPasswordInput('');
-                  setAuthError('');
-                  setShowAuthModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 transition-colors"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                <span>Responsável</span>
-              </button>
-            )}
+          {/* Botões de Ação de Designações - Bem proporcionados */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              id="btn-importar-pdf-designacoes"
+              onClick={() => setIsImportPlanilhaOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-purple-800 active:scale-[0.98] transition cursor-pointer"
+              title="Importar programação oficial de designações via PDF"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Importar PDF</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-cadastrar-designacao"
+              onClick={handleOpenCreate}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-800 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors cursor-pointer"
+              title="Cadastrar nova programação manualmente"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Cadastrar Programação</span>
+            </button>
           </div>
         </div>
 
         {/* Feedback Alert */}
         {feedbackMsg && (
           <div
-            className={`mt-4 flex items-center justify-between rounded-xl p-3.5 text-sm font-bold ${
+            className={`mt-4 flex items-center justify-between rounded-xl p-3 text-xs sm:text-sm font-bold ${
               feedbackMsg.tipo === 'sucesso'
                 ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                 : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300'
@@ -486,7 +446,7 @@ export const DesignacoesView: React.FC = () => {
             value={buscaIrmao}
             onChange={(e) => setBuscaIrmao(e.target.value)}
             placeholder="Consultar designações de um irmão..."
-            className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-8 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
           />
           {buscaIrmao && (
             <button
@@ -501,7 +461,7 @@ export const DesignacoesView: React.FC = () => {
 
         {/* Resumo de designações do irmão caso esteja buscando */}
         {resumoIrmao && (
-          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 text-xs dark:border-blue-900 dark:bg-blue-950/40">
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/40">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold text-blue-900 dark:text-blue-200">
                 Designações para "{buscaIrmao.trim()}":{' '}
@@ -523,36 +483,55 @@ export const DesignacoesView: React.FC = () => {
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* SELETOR SIMPLES DA DATA DA REUNIÃO (PADRÃO VIDA E MINISTÉRIO) */}
+      {/* SELETOR INTEGRADO À TELA (PADRÃO VIDA E MINISTÉRIO)           */}
       {/* ------------------------------------------------------------- */}
       {escalasOrdenadas.length > 0 && escalaAtiva ? (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-300 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          {/* Barra de Navegação da Reunião Integrada */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleEscalaAnterior}
                 disabled={indiceEscalaAtual <= 0}
-                className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className="rounded-lg border border-slate-300 bg-white p-1.5 sm:p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
                 aria-label="Reunião anterior"
+                title="Reunião anterior"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className="h-4.5 w-4.5" />
               </button>
               <button
                 type="button"
                 onClick={handleProximaEscala}
                 disabled={indiceEscalaAtual >= escalasOrdenadas.length - 1}
-                className="rounded-lg border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className="rounded-lg border border-slate-300 bg-white p-1.5 sm:p-2 text-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
                 aria-label="Próxima reunião"
+                title="Próxima reunião"
               >
-                <ChevronRight className="h-5 w-5" />
+                <ChevronRight className="h-4.5 w-4.5" />
               </button>
+
               <div className="ml-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Reunião selecionada:
                 </span>
-                <div className="text-base font-black text-slate-900 dark:text-white">
-                  {escalaAtiva.dia} • {escalaAtiva.mes}
+                <div className="flex items-center gap-2">
+                  <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                    {escalaAtiva.dia}
+                  </span>
+                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                    ({escalaAtiva.mes})
+                  </span>
+                  {proximoIndex !== -1 && escalaAtiva.id === escalasOrdenadas[proximoIndex]?.id && (
+                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+                      Semana Atual
+                    </span>
+                  )}
+                  {escalaAtiva.ehEspecial && (
+                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+                      Especial
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -562,11 +541,11 @@ export const DesignacoesView: React.FC = () => {
               <select
                 value={escalaAtiva.id}
                 onChange={(e) => setEscalaIdAtiva(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 max-w-xs"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs sm:text-sm font-bold text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer max-w-xs"
               >
-                {escalasOrdenadas.map((item) => (
+                {escalasOrdenadas.map((item, idx) => (
                   <option key={item.id} value={item.id}>
-                    {item.dia} - {item.mes}
+                    {item.dia} - {item.mes} {idx === proximoIndex ? '(Semana Atual)' : ''}
                   </option>
                 ))}
               </select>
@@ -577,7 +556,7 @@ export const DesignacoesView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleOpenEdit(escalaAtiva)}
-                    className="rounded-lg border border-slate-300 bg-white p-2 text-blue-800 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300"
+                    className="rounded-lg border border-slate-300 bg-white p-1.5 text-blue-800 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300 cursor-pointer"
                     title="Editar designação"
                   >
                     <Edit2 className="h-4 w-4" />
@@ -585,7 +564,7 @@ export const DesignacoesView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setItemParaExcluir(escalaAtiva)}
-                    className="rounded-lg border border-slate-300 bg-white p-2 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400"
+                    className="rounded-lg border border-slate-300 bg-white p-1.5 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:bg-slate-800 dark:text-red-400 cursor-pointer"
                     title="Excluir designação"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -596,133 +575,109 @@ export const DesignacoesView: React.FC = () => {
           </div>
 
           {/* ------------------------------------------------------------- */}
-          {/* QUADRO DA REUNIÃO SELECIONADA                                 */}
+          {/* QUADRO DE DESIGNAÇÕES CONTÍNUO (SEM BORDAS LATERAIS DE CARD)  */}
           {/* ------------------------------------------------------------- */}
-          <section
-            id="card-designacao-selecionada"
-            className="rounded-2xl border-2 border-blue-600 bg-white p-6 shadow-sm dark:border-blue-500 dark:bg-slate-900"
-          >
-            <div className="flex items-center justify-between border-b border-blue-200 pb-3 dark:border-blue-900/60">
-              <div className="flex items-center gap-2">
-                <span className="rounded-md bg-blue-700 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white dark:bg-blue-600">
-                  {proximoIndex !== -1 && escalaAtiva.id === escalasOrdenadas[proximoIndex]?.id
-                    ? 'Próxima Reunião'
-                    : 'Designações da Reunião'}
-                </span>
-                {escalaAtiva.ehEspecial && (
-                  <span className="rounded-md bg-amber-500 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
-                    Especial
+          <div className="w-full space-y-6">
+            {/* Cabeçalho da Reunião Selecionada */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 border-b border-blue-200 dark:border-blue-900/60 gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black text-slate-900 dark:text-white">
+                    {escalaAtiva.dia} ({escalaAtiva.mes})
                   </span>
-                )}
+                  {proximoIndex !== -1 && escalaAtiva.id === escalasOrdenadas[proximoIndex]?.id && (
+                    <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                      Semana Atual
+                    </span>
+                  )}
+                  {escalaAtiva.ehEspecial && (
+                    <span className="inline-flex items-center rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                      Especial
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Designações e responsabilidades da reunião congregacional
+                </p>
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Reunião / Data */}
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                  <Calendar className="h-5 w-5" />
+            {/* Lista Contínua de Designações - Sem caixas/bordas laterais de cards */}
+            <div className="divide-y divide-slate-200 dark:divide-slate-800">
+              {/* Presidência */}
+              <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <User className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Presidência
+                  </span>
                 </div>
-                <div>
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Reunião / Data:
-                  </span>
-                  <span className="text-lg font-black text-slate-900 dark:text-white">
-                    {escalaAtiva.dia}
-                  </span>
-                  <span className="block text-xs font-bold text-blue-700 dark:text-blue-400">
-                    {escalaAtiva.mes}
-                  </span>
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white sm:text-right">
+                  {escalaAtiva.presidencia || 'A definir'}
                 </div>
               </div>
 
               {/* Indicadores */}
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                  <Users className="h-5 w-5" />
+              <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <Users className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Indicadores (Entrada & Auditório)
+                  </span>
                 </div>
-                <div>
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Indicadores:
-                  </span>
-                  <span className="text-base font-black text-slate-900 dark:text-white">
-                    {escalaAtiva.indicador || '—'}
-                  </span>
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white sm:text-right">
+                  {escalaAtiva.indicador || '—'}
                 </div>
               </div>
 
               {/* Microfones Volantes */}
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                  <Mic className="h-5 w-5" />
+              <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <Mic className="h-4.5 w-4.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Microfones Volantes
+                  </span>
                 </div>
-                <div>
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Microfones:
-                  </span>
-                  <span className="text-base font-black text-slate-900 dark:text-white">
-                    {escalaAtiva.microfone || '—'}
-                  </span>
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white sm:text-right">
+                  {escalaAtiva.microfone || '—'}
                 </div>
               </div>
 
-              {/* Áudio e Vídeo */}
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                  <Volume2 className="h-5 w-5" />
+              {/* Sistema de Áudio & Vídeo */}
+              <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <Volume2 className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Sistema de Áudio & Vídeo
+                  </span>
                 </div>
-                <div>
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Áudio & Vídeo:
-                  </span>
-                  <span className="text-base font-extrabold text-slate-900 dark:text-white">
-                    Áudio: {escalaAtiva.audio || '—'} | Vídeo: {escalaAtiva.video || '—'}
-                  </span>
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white sm:text-right">
+                  Áudio: {escalaAtiva.audio || '—'} &bull; Vídeo: {escalaAtiva.video || '—'}
                 </div>
               </div>
 
-              {/* Leitor */}
-              {escalaAtiva.leitor && (
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                    <BookOpen className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Leitor:
-                    </span>
-                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
-                      {escalaAtiva.leitor}
-                    </span>
-                  </div>
+              {/* Leitor da Sentinela */}
+              <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <BookOpen className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Leitor da Sentinela / Estudo
+                  </span>
                 </div>
-              )}
+                <div className="text-base sm:text-lg font-black text-slate-900 dark:text-white sm:text-right">
+                  {escalaAtiva.leitor || '—'}
+                </div>
+              </div>
 
-              {/* Presidência */}
-              {escalaAtiva.presidencia && (
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                    <User className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Presidência:
-                    </span>
-                    <span className="text-base font-extrabold text-slate-900 dark:text-white">
-                      {escalaAtiva.presidencia}
-                    </span>
-                  </div>
+              {/* Observação se houver */}
+              {escalaAtiva.observacao && (
+                <div className="py-4 bg-amber-50/40 dark:bg-amber-950/20 text-xs sm:text-sm text-slate-700 dark:text-slate-300 rounded-xl px-4 mt-2">
+                  <strong className="text-amber-800 dark:text-amber-300 uppercase mr-1">Observação:</strong>
+                  <span>{escalaAtiva.observacao}</span>
                 </div>
               )}
             </div>
-
-            {/* Observação se houver */}
-            {escalaAtiva.observacao && (
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 font-medium">
-                <b>Observação:</b> {escalaAtiva.observacao}
-              </div>
-            )}
-          </section>
+          </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-800">
@@ -739,76 +694,6 @@ export const DesignacoesView: React.FC = () => {
               <span>Cadastrar Primeira Programação</span>
             </button>
           )}
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL DE AUTENTICAÇÃO DO RESPONSÁVEL                         */}
-      {/* ------------------------------------------------------------- */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Lock className="h-5 w-5 text-blue-700 dark:text-blue-400" />
-                <h3 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  Acesso do Responsável
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleLoginSubmit} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                  Senha de Acesso:
-                </label>
-                <div className="relative mt-1">
-                  <input
-                    type={showPasswordText ? 'text' : 'password'}
-                    value={passwordInput}
-                    onChange={(e) => {
-                      setPasswordInput(e.target.value);
-                      setAuthError('');
-                    }}
-                    placeholder="Digite a senha..."
-                    autoFocus
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordText(!showPasswordText)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    {showPasswordText ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {authError && <p className="mt-1 text-xs font-bold text-red-600">{authError}</p>}
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAuthModal(false)}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white hover:bg-blue-800"
-                >
-                  Entrar
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 
@@ -1009,8 +894,11 @@ export const DesignacoesView: React.FC = () => {
           if (meses && meses.length > 0) {
             setMesFiltro(meses[0]);
           }
+          setFeedbackMsg({ tipo: 'sucesso', texto: 'Programação importada com sucesso via PDF!' });
+          setTimeout(() => setFeedbackMsg(null), 3500);
         }}
       />
+
     </div>
   );
 };

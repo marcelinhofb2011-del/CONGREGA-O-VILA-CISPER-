@@ -43,7 +43,7 @@ export const ScheduleNavTabs: React.FC<ScheduleNavTabsProps> = ({
           type="button"
           id="btn-aba-proximas"
           onClick={() => onChangeModo('proximas')}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition-all active:scale-[0.99] ${
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-bold transition-all active:scale-[0.99] cursor-pointer ${
             modoVisualizacao === 'proximas'
               ? activeProximasClass
               : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
@@ -66,7 +66,7 @@ export const ScheduleNavTabs: React.FC<ScheduleNavTabsProps> = ({
           type="button"
           id="btn-aba-historico"
           onClick={() => onChangeModo('historico')}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold transition-all active:scale-[0.99] ${
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-bold transition-all active:scale-[0.99] cursor-pointer ${
             modoVisualizacao === 'historico'
               ? 'bg-slate-800 text-white shadow-xs dark:bg-slate-200 dark:text-slate-900'
               : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'

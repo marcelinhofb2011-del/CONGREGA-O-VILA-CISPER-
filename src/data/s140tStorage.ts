@@ -210,6 +210,142 @@ export const S140T_DADOS_PADRAO: S140TSemana[] = [
     canticoFinal: 120,
     oracaoFinal: 'Geovane',
   },
+  {
+    id: 'sem-2026-10-12',
+    periodo: '12-18 DE OUTUBRO',
+    leituraBiblica: 'JEREMIAS 44-46',
+    ehVisita: false,
+    dataReferencia: '2026-10-12',
+    presidente: 'Vilson M.',
+    canticoInicial: 8,
+    oracaoInicial: 'Vilson M.',
+    comentariosIniciaisMin: 1,
+    tesourosSalao: 'Salão principal',
+    discursoTesourosTitulo: 'Não confie em coisas passageiras',
+    discursoTesourosTempoMin: 10,
+    discursoTesourosIrmao: 'Geovane',
+    joiasEspirituaisIrmao: 'Marcelo F.',
+    joiasEspirituaisTempoMin: 10,
+    leituraBibliaIrmao: 'Samuel',
+    leituraBibliaTempoMin: 4,
+    ministerioSalao: 'Salão principal',
+    partesMinisterio: [
+      { id: 'pm-5-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Ruth Mendes', ajudante: 'Cleonice' },
+      { id: 'pm-5-2', numero: 2, titulo: 'Explicando suas crenças', tempoMin: 5, designado: 'Hugo C.', ajudante: 'Danilo C.' },
+    ],
+    canticoMeio: 70,
+    partesVidaCrista: [
+      { id: 'pvc-5-1', titulo: 'Como perseverar sob pressão', tempoMin: 15, designado: 'Kleber S.' },
+    ],
+    estudoBiblicoTempoMin: 30,
+    estudoBiblicoDirigente: 'Danilo C.',
+    estudoBiblicoLeitor: 'Wilmar M.',
+    comentariosFinaisMin: 3,
+    canticoFinal: 130,
+    oracaoFinal: 'Hugo C.',
+  },
+  {
+    id: 'sem-2026-10-19',
+    periodo: '19-25 DE OUTUBRO',
+    leituraBiblica: 'JEREMIAS 47-48',
+    ehVisita: false,
+    dataReferencia: '2026-10-19',
+    presidente: 'Marcelo F.',
+    canticoInicial: 15,
+    oracaoInicial: 'Marcelo F.',
+    comentariosIniciaisMin: 1,
+    tesourosSalao: 'Salão principal',
+    discursoTesourosTitulo: 'Jeová cumpre todas as suas promessas',
+    discursoTesourosTempoMin: 10,
+    discursoTesourosIrmao: 'Hermes B.',
+    joiasEspirituaisIrmao: 'Hugo C.',
+    joiasEspirituaisTempoMin: 10,
+    leituraBibliaIrmao: 'Vitor Fraga',
+    leituraBibliaTempoMin: 4,
+    ministerioSalao: 'Salão principal',
+    partesMinisterio: [
+      { id: 'pm-6-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Maria Silva', ajudante: 'Tereza' },
+      { id: 'pm-6-2', numero: 2, titulo: 'Fazendo discípulos', tempoMin: 5, designado: 'Vitor Fraga', ajudante: 'Pedro M.' },
+    ],
+    canticoMeio: 88,
+    partesVidaCrista: [
+      { id: 'pvc-6-1', titulo: 'Necessidades locais', tempoMin: 15, designado: 'Marcelo F.' },
+    ],
+    estudoBiblicoTempoMin: 30,
+    estudoBiblicoDirigente: 'Samuel',
+    estudoBiblicoLeitor: 'Hugo C.',
+    comentariosFinaisMin: 3,
+    canticoFinal: 105,
+    oracaoFinal: 'Vilson M.',
+  },
+  {
+    id: 'sem-2026-10-26',
+    periodo: '26 DE OUTUBRO A 1 DE NOVEMBRO',
+    leituraBiblica: 'JEREMIAS 49-50',
+    ehVisita: false,
+    dataReferencia: '2026-10-26',
+    presidente: 'Kleber S.',
+    canticoInicial: 33,
+    oracaoInicial: 'Kleber S.',
+    comentariosIniciaisMin: 1,
+    tesourosSalao: 'Salão principal',
+    discursoTesourosTitulo: 'A justiça de Jeová prevalecerá',
+    discursoTesourosTempoMin: 10,
+    discursoTesourosIrmao: 'Danilo C.',
+    joiasEspirituaisIrmao: 'Vilson M.',
+    joiasEspirituaisTempoMin: 10,
+    leituraBibliaIrmao: 'Pedro Mendes',
+    leituraBibliaTempoMin: 4,
+    ministerioSalao: 'Salão principal',
+    partesMinisterio: [
+      { id: 'pm-7-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Lourdes', ajudante: 'Aparecida' },
+      { id: 'pm-7-2', numero: 2, titulo: 'Cultivando o interesse', tempoMin: 4, designado: 'Eliane', ajudante: 'Elizete' },
+    ],
+    canticoMeio: 62,
+    partesVidaCrista: [
+      { id: 'pvc-7-1', titulo: 'Trabalhe com alegria para Jeová', tempoMin: 15, designado: 'Danilo C.' },
+    ],
+    estudoBiblicoTempoMin: 30,
+    estudoBiblicoDirigente: 'Geovane',
+    estudoBiblicoLeitor: 'Airton',
+    comentariosFinaisMin: 3,
+    canticoFinal: 140,
+    oracaoFinal: 'Hermes B.',
+  },
+  {
+    id: 'sem-2026-11-02',
+    periodo: '2-8 DE NOVEMBRO',
+    leituraBiblica: 'JEREMIAS 51-52',
+    ehVisita: false,
+    dataReferencia: '2026-11-02',
+    presidente: 'Hugo C.',
+    canticoInicial: 54,
+    oracaoInicial: 'Hugo C.',
+    comentariosIniciaisMin: 1,
+    tesourosSalao: 'Salão principal',
+    discursoTesourosTitulo: 'Babilônia cairá e nunca mais se levantará',
+    discursoTesourosTempoMin: 10,
+    discursoTesourosIrmao: 'Marcelo F.',
+    joiasEspirituaisIrmao: 'Geovane',
+    joiasEspirituaisTempoMin: 10,
+    leituraBibliaIrmao: 'Dhiego',
+    leituraBibliaTempoMin: 4,
+    ministerioSalao: 'Salão principal',
+    partesMinisterio: [
+      { id: 'pm-8-1', numero: 1, titulo: 'Iniciando conversas', tempoMin: 3, designado: 'Silvani', ajudante: 'Maria José' },
+      { id: 'pm-8-2', numero: 2, titulo: 'Fazendo discípulos', tempoMin: 5, designado: 'Airton', ajudante: 'Valdemir' },
+    ],
+    canticoMeio: 91,
+    partesVidaCrista: [
+      { id: 'pvc-8-1', titulo: 'O amor de Jeová nunca falha', tempoMin: 15, designado: 'Vilson M.' },
+    ],
+    estudoBiblicoTempoMin: 30,
+    estudoBiblicoDirigente: 'Kleber S.',
+    estudoBiblicoLeitor: 'Vitor Fraga',
+    comentariosFinaisMin: 3,
+    canticoFinal: 148,
+    oracaoFinal: 'Danilo C.',
+  },
 ];
 
 export function parseSemanaDateLimits(semana: S140TSemana): { inicio: Date; reuniao: Date; fim: Date } | null {
@@ -295,6 +431,7 @@ export async function saveS140TSemana(semana: S140TSemana): Promise<{ success: b
     updated = ordenarSemanasCronologicamente(updated);
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
+    firebaseSync.saveS140TSemana(semana).catch(() => {});
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -307,6 +444,7 @@ export async function deleteS140TSemana(id: string): Promise<{ success: boolean;
     const updated = current.filter((s) => s.id !== id);
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
+    firebaseSync.deleteS140TSemana(id).catch(() => {});
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -347,6 +485,7 @@ export async function saveBulkS140TSemanas(
     updated = ordenarSemanasCronologicamente(updated);
     localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: updated }));
+    firebaseSync.saveAllS140T(updated).catch(() => {});
     return { success: true, data: updated, count: newWeeks.length };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro ao salvar programações em lote.' };

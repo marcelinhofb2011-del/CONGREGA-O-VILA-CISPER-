@@ -347,7 +347,7 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 pb-4 pt-2">
+    <div className="w-full space-y-8 pb-6 pt-1">
       {/* ------------------------------------------------------------- */}
       {/* 1. CABEÇALHO                                                  */}
       {/* ------------------------------------------------------------- */}
@@ -466,10 +466,10 @@ export const InicioView: React.FC<InicioViewProps> = ({ onNavigate }) => {
           Acessos Principais
         </h2>
 
-        {/* Modo Lista com abas fixas e largura compacta */}
+        {/* Modo Grade fluida integrada à proporção da tela */}
         <div
           id="lista-acessos-principais"
-          className="flex flex-col gap-2"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
         >
           {botoesAcessoPrincipal.map((botao) => {
             const Icon = botao.icon;

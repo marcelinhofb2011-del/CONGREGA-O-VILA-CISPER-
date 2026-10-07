@@ -303,7 +303,26 @@ class FirebaseSyncManager {
           semanas.push(docSnap.data() as S140TSemana);
         });
 
-        const semanasFinais = semanas.filter((s) => !s.id.startsWith('s140t-2026-04-'));
+        let semanasFinais = semanas.filter((s) => !s.id.startsWith('s140t-2026-04-'));
+        if (semanasFinais.length === 0) {
+          const dadosLocaisRaw = localStorage.getItem(STORAGE_KEY_S140T);
+          let locais: S140TSemana[] = [];
+          try {
+            if (dadosLocaisRaw) locais = JSON.parse(dadosLocaisRaw);
+          } catch {}
+          semanasFinais = Array.isArray(locais) && locais.length > 0 ? locais : S140T_DADOS_PADRAO;
+
+          // Faz seed automático no Firestore para nunca deixar vazio na nuvem
+          try {
+            const batch = writeBatch(db);
+            for (const sem of semanasFinais) {
+              const docRef = doc(db, COLLECTIONS.S140T, sem.id);
+              batch.set(docRef, sem);
+            }
+            batch.commit().catch(() => {});
+          } catch {}
+        }
+
         semanasFinais.sort((a, b) => (a.dataReferencia || '').localeCompare(b.dataReferencia || ''));
         localStorage.setItem(STORAGE_KEY_S140T, JSON.stringify(semanasFinais));
         window.dispatchEvent(new CustomEvent('s140t-firebase-updated', { detail: semanasFinais }));

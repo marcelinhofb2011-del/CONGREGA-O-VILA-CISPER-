@@ -579,11 +579,11 @@ export const AdminPainelView: React.FC<AdminPainelViewProps> = ({ onBackToPublic
 
       {/* Conteúdo Exclusivo do Departamento Selecionado */}
       <div>
-        {activeTab === 'designacoes' && <DesignacoesView />}
-        {activeTab === 'vida-ministerio' && <VidaEMinisterioView />}
+        {activeTab === 'designacoes' && <DesignacoesView isAdmin={true} />}
+        {activeTab === 'vida-ministerio' && <VidaEMinisterioView isAdmin={true} />}
         {activeTab === 'discursos' && <DiscursoPublicoView />}
         {activeTab === 'campo' && <ServicoDeCampoView />}
-        {activeTab === 'limpeza' && <LimpezaView />}
+        {activeTab === 'limpeza' && <LimpezaView isAdmin={true} />}
         {activeTab === 'territorios' && <TerritoriosView isAdmin={true} />}
         {activeTab === 'secretario' && <SecretarioView />}
         {activeTab === 'relatorios' && <RelatoriosView />}
