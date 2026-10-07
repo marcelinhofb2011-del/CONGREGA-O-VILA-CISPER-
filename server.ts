@@ -481,8 +481,42 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    // Evita cache persistente de service worker, manifesto e index.html para que o PWA sempre receba atualizações
+    app.use((req, res, next) => {
+      const p = req.path.toLowerCase();
+      if (
+        p === '/' ||
+        p === '/index.html' ||
+        p.endsWith('/sw.js') ||
+        p.endsWith('/registersw.js') ||
+        p.includes('manifest')
+      ) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      next();
+    });
+
+    app.use(express.static(path.resolve(__dirname, 'dist'), {
+      setHeaders: (res, filePath) => {
+        const lower = filePath.toLowerCase();
+        if (
+          lower.endsWith('sw.js') ||
+          lower.endsWith('registersw.js') ||
+          lower.endsWith('index.html') ||
+          lower.endsWith('.webmanifest') ||
+          lower.endsWith('manifest.json')
+        ) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        }
+      },
+    }));
+
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

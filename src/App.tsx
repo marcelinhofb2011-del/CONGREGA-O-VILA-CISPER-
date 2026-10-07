@@ -61,7 +61,7 @@ const getScreenFromUrlOrState = (): ScreenId => {
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(getScreenFromUrlOrState);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const { isOnline } = usePWA();
+  const { isOnline, hasUpdate, forceUpdatePWA } = usePWA();
 
   // Persistent Theme
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -214,6 +214,23 @@ export default function App() {
         fontSize={textSize === 'pequeno' ? 'P' : textSize === 'grande' ? 'G' : 'M'}
         onToggleFontSize={toggleFontSize}
       />
+
+      {/* Alerta de Atualização Imediata da PWA */}
+      {hasUpdate && (
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold flex items-center justify-between shadow-md z-40">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Nova atualização com melhorias disponível!</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => forceUpdatePWA()}
+            className="rounded-lg bg-white text-blue-900 px-3 py-1 font-bold text-xs shadow-xs hover:bg-blue-50 active:scale-95 transition-all cursor-pointer"
+          >
+            Atualizar Agora
+          </button>
+        </div>
+      )}
 
       {/* Layout Principal com Sidebar (Tablet/PC) e Quadro de Leitura */}
       <div className="flex flex-1 overflow-hidden">

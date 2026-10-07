@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { subscribePWAUpdate, forceUpdatePWA } from '../pwaRegister';
 
 export function usePWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [hasUpdate, setHasUpdate] = useState(false);
 
   const isIOS =
     typeof navigator !== 'undefined' &&
@@ -12,6 +14,10 @@ export function usePWA() {
     !(window as any).MSStream;
 
   useEffect(() => {
+    const unsub = subscribePWAUpdate((need) => {
+      setHasUpdate(need);
+    });
+
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -37,6 +43,7 @@ export function usePWA() {
     }
 
     return () => {
+      unsub();
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
@@ -55,11 +62,18 @@ export function usePWA() {
     setDeferredPrompt(null);
   };
 
+  const reloadApp = async () => {
+    await forceUpdatePWA();
+  };
+
   return {
     isInstallable,
     isInstalled,
     isIOS,
     isOnline,
+    hasUpdate,
     promptInstall,
+    reloadApp,
+    forceUpdatePWA,
   };
 }
