@@ -167,6 +167,23 @@ async function handleParsePdfRequest(req: express.Request, res: express.Response
       deterministicResult = parseLimpezaFromText(fullText, fileName);
     }
 
+    const hasDeterministicData =
+      (modulo === 'vida-ministerio' && deterministicResult?.semanas?.length > 0) ||
+      (modulo === 'designacoes' && deterministicResult?.escala?.length > 0) ||
+      (modulo === 'campo' && deterministicResult?.programacao?.length > 0) ||
+      (modulo === 'discursos' && deterministicResult?.discursos?.length > 0) ||
+      (modulo === 'limpeza' && deterministicResult?.escalas?.length > 0);
+
+    if (hasDeterministicData) {
+      console.log(`[parse-pdf] Sucesso instantâneo via parser estruturado para ${modulo}!`);
+      return res.json({
+        success: true,
+        modulo,
+        ...deterministicResult,
+        origem: 'parser-estruturado',
+      });
+    }
+
     // Função de limpeza para números de cântico
     const cleanSongNum = (val: any): number | string => {
       if (val === undefined || val === null) return '';
